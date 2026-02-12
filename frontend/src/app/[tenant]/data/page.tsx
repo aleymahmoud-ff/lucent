@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useCallback } from "react";
+import { useRouter, useParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
@@ -9,8 +10,11 @@ import {
   DataSummary,
   SampleDataLoader,
   DatasetList,
+  StatusCards,
+  TemplateDownload,
+  ConnectorPanel,
 } from "@/components/data";
-import { ArrowLeft, Download, Settings } from "lucide-react";
+import { ArrowLeft, Settings, ArrowRight } from "lucide-react";
 import { toast } from "sonner";
 
 interface Dataset {
@@ -28,9 +32,19 @@ interface Dataset {
 }
 
 export default function DataPage() {
+  const router = useRouter();
+  const params = useParams();
+  const tenant = params.tenant as string;
+
   const [selectedDataset, setSelectedDataset] = useState<Dataset | null>(null);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
   const [activeTab, setActiveTab] = useState("preview");
+
+  const handleContinueToPreprocessing = useCallback(() => {
+    if (selectedDataset) {
+      router.push(`/${tenant}/preprocessing?dataset=${selectedDataset.id}`);
+    }
+  }, [selectedDataset, router, tenant]);
 
   const handleUploadComplete = useCallback((result: any) => {
     toast.success("File uploaded successfully!", {
@@ -71,32 +85,12 @@ export default function DataPage() {
     setSelectedDataset(null);
   }, []);
 
-  const handleDownloadTemplate = async (type: string) => {
-    try {
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
-      const response = await fetch(`${apiUrl}/datasets/templates/download?template_type=${type}`, {
-        headers: {
-          Authorization: `Bearer ${localStorage.getItem("token")}`,
-        },
-      });
-
-      if (!response.ok) throw new Error("Download failed");
-
-      const blob = await response.blob();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `lucent_${type}_template.csv`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      window.URL.revokeObjectURL(url);
-
-      toast.success("Template downloaded!");
-    } catch (err) {
-      toast.error("Failed to download template");
-    }
-  };
+  const handleConnectorDataFetched = useCallback((data: any) => {
+    toast.success("Data imported from connector!", {
+      description: `Connected to ${data.type}`,
+    });
+    setRefreshTrigger((prev) => prev + 1);
+  }, []);
 
   // Dataset detail view
   if (selectedDataset) {
@@ -122,7 +116,10 @@ export default function DataPage() {
               <Settings className="h-4 w-4 mr-2" />
               Configure Columns
             </Button>
-            <Button size="sm">Continue to Preprocessing</Button>
+            <Button size="sm" onClick={handleContinueToPreprocessing}>
+              Continue to Preprocessing
+              <ArrowRight className="h-4 w-4 ml-2" />
+            </Button>
           </div>
         </div>
 
@@ -160,16 +157,17 @@ export default function DataPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <ConnectorPanel onDataFetched={handleConnectorDataFetched} />
           <SampleDataLoader
             onLoadComplete={handleSampleLoadComplete}
             onLoadError={handleSampleLoadError}
           />
-          <Button variant="outline" onClick={() => handleDownloadTemplate("multi_entity")}>
-            <Download className="h-4 w-4 mr-2" />
-            Download Template
-          </Button>
+          <TemplateDownload />
         </div>
       </div>
+
+      {/* Status Cards */}
+      <StatusCards refreshTrigger={refreshTrigger} />
 
       {/* Upload Section */}
       <FileUploader onUploadComplete={handleUploadComplete} onUploadError={handleUploadError} />

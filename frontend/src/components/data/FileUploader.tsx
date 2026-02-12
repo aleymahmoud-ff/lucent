@@ -129,13 +129,24 @@ export function FileUploader({
           setStatus("success");
           onUploadComplete(result);
         } else {
-          const errorData = JSON.parse(xhr.responseText);
-          throw new Error(errorData.detail || "Upload failed");
+          try {
+            const errorData = JSON.parse(xhr.responseText);
+            const errorMessage = errorData.detail || "Upload failed";
+            setError(errorMessage);
+            setStatus("error");
+            onUploadError?.(errorMessage);
+          } catch {
+            setError("Upload failed");
+            setStatus("error");
+            onUploadError?.("Upload failed");
+          }
         }
       };
 
       xhr.onerror = () => {
-        throw new Error("Network error occurred");
+        setError("Network error occurred");
+        setStatus("error");
+        onUploadError?.("Network error occurred");
       };
 
       const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
@@ -246,6 +257,9 @@ export function FileUploader({
               <p className="text-xs text-muted-foreground">
                 or click to browse. Supports CSV and Excel files up to {maxSizeMB}MB
               </p>
+              <p className="text-xs text-muted-foreground font-medium mt-2">
+                Required columns: Date, Entity_ID, Entity_Name, Volume
+              </p>
             </div>
             <Button
               variant="outline"
@@ -267,8 +281,9 @@ export function FileUploader({
       </div>
 
       {/* File type info */}
-      <div className="mt-4 text-center text-xs text-muted-foreground">
-        Accepted formats: CSV (.csv), Excel (.xlsx, .xls)
+      <div className="mt-4 text-center text-xs text-muted-foreground space-y-1">
+        <p>Accepted formats: CSV (.csv), Excel (.xlsx, .xls)</p>
+        <p className="font-medium">Required columns: Date, Entity_ID, Entity_Name, Volume</p>
       </div>
     </Card>
   );

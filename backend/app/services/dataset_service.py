@@ -63,8 +63,17 @@ class DatasetService:
         if df.empty:
             raise ValueError("The uploaded file is empty")
 
-        if len(df.columns) < 2:
-            raise ValueError("File must have at least 2 columns (date and value)")
+        if len(df.columns) < 4:
+            raise ValueError("File must have at least 4 columns: Date, Entity_ID, Entity_Name, Volume")
+
+        # Validate required columns
+        is_valid, missing_cols = self.validate_required_columns(df)
+        if not is_valid:
+            raise ValueError(
+                f"Missing required columns: {', '.join(missing_cols)}. "
+                f"Required columns are: Date, Entity_ID, Entity_Name, Volume. "
+                f"Found columns: {', '.join(df.columns.tolist())}"
+            )
 
         # Create dataset record
         dataset = Dataset(
@@ -183,6 +192,13 @@ class DatasetService:
         name = name.replace("_", " ").replace("-", " ")
         return name.title()
 
+    def validate_required_columns(self, df: pd.DataFrame) -> Tuple[bool, List[str]]:
+        """Validate data has required columns: Date, Entity_ID, Entity_Name, Volume"""
+        required = ['Date', 'Entity_ID', 'Entity_Name', 'Volume']
+        # Check for exact match (case-sensitive)
+        missing = [col for col in required if col not in df.columns]
+        return len(missing) == 0, missing
+
     def _detect_column_types(self, df: pd.DataFrame) -> Dict[str, str]:
         """Detect column types"""
         types = {}
@@ -225,66 +241,102 @@ class DatasetService:
         return False
 
     def _analyze_structure(self, df: pd.DataFrame) -> Dict[str, Optional[str]]:
-        """Auto-detect date, entity, and value columns"""
+        """Detect date, entity, and value columns.
+
+        Uses exact required column names first (Date, Entity_ID, Volume),
+        then falls back to auto-detection for backwards compatibility.
+        """
         result = {
             "date_column": None,
             "entity_column": None,
             "value_column": None,
         }
 
-        # Look for date column
-        date_keywords = ["date", "time", "timestamp", "day", "month", "year", "period"]
-        for col in df.columns:
-            col_lower = col.lower()
-            if any(kw in col_lower for kw in date_keywords):
-                result["date_column"] = col
-                break
-            # Also check type
-            if pd.api.types.is_datetime64_any_dtype(df[col]):
-                result["date_column"] = col
-                break
-            if self._is_date_column(df[col]):
-                result["date_column"] = col
-                break
+        # Check for exact required column names first (preferred)
+        if "Date" in df.columns:
+            result["date_column"] = "Date"
+        if "Entity_ID" in df.columns:
+            result["entity_column"] = "Entity_ID"
+        if "Volume" in df.columns:
+            result["value_column"] = "Volume"
 
-        # Look for entity column (categorical with few unique values relative to row count)
-        entity_keywords = ["entity", "product", "item", "sku", "category", "store", "location", "region", "id", "name"]
-        for col in df.columns:
-            if col == result["date_column"]:
-                continue
-            col_lower = col.lower()
-            # Check for keywords
-            if any(kw in col_lower for kw in entity_keywords):
-                # Verify it's categorical-like
-                unique_ratio = df[col].nunique() / len(df)
-                if unique_ratio < 0.5:  # Less than 50% unique values
-                    result["entity_column"] = col
+        # If all required columns found, return early
+        if all(result.values()):
+            return result
+
+        # Fall back to auto-detection for legacy/flexible uploads
+        # Look for date column
+        if not result["date_column"]:
+            date_keywords = ["date", "time", "timestamp", "day", "month", "year", "period"]
+            for col in df.columns:
+                col_lower = col.lower()
+                if any(kw in col_lower for kw in date_keywords):
+                    result["date_column"] = col
                     break
-            # Check if column is string/object with reasonable cardinality
-            if df[col].dtype == object:
-                unique_ratio = df[col].nunique() / len(df)
-                if 0.001 < unique_ratio < 0.5:  # Between 0.1% and 50%
-                    result["entity_column"] = col
+                # Also check type
+                if pd.api.types.is_datetime64_any_dtype(df[col]):
+                    result["date_column"] = col
                     break
+                if self._is_date_column(df[col]):
+                    result["date_column"] = col
+                    break
+
+        # Look for entity column
+        if not result["entity_column"]:
+            entity_priority = ["entity_id", "entity"]
+            entity_keywords = ["product", "item", "sku", "category", "store", "location", "region"]
+
+            # First check for priority columns (exact match)
+            for priority_col in entity_priority:
+                if priority_col in [c.lower() for c in df.columns]:
+                    col = [c for c in df.columns if c.lower() == priority_col][0]
+                    if col != result["date_column"]:
+                        unique_ratio = df[col].nunique() / len(df)
+                        if unique_ratio < 0.5:
+                            result["entity_column"] = col
+                            break
+
+            # Then check for keyword matches
+            if not result["entity_column"]:
+                for col in df.columns:
+                    if col == result["date_column"]:
+                        continue
+                    col_lower = col.lower()
+                    # Skip entity_name to prefer entity_id
+                    if col_lower == "entity_name":
+                        continue
+                    # Check for keywords
+                    if any(kw in col_lower for kw in entity_keywords):
+                        unique_ratio = df[col].nunique() / len(df)
+                        if unique_ratio < 0.5:
+                            result["entity_column"] = col
+                            break
+                    # Check if column is string/object with reasonable cardinality
+                    if df[col].dtype == object:
+                        unique_ratio = df[col].nunique() / len(df)
+                        if 0.001 < unique_ratio < 0.5:
+                            result["entity_column"] = col
+                            break
 
         # Look for value column (numeric)
-        value_keywords = ["value", "sales", "amount", "quantity", "count", "revenue", "price", "demand", "forecast"]
-        numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+        if not result["value_column"]:
+            value_keywords = ["value", "sales", "amount", "quantity", "count", "revenue", "price", "demand", "forecast", "volume"]
+            numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
 
-        for col in numeric_cols:
-            if col == result["date_column"]:
-                continue
-            col_lower = col.lower()
-            if any(kw in col_lower for kw in value_keywords):
-                result["value_column"] = col
-                break
-
-        # If no value column found by keyword, use first numeric column
-        if not result["value_column"] and numeric_cols:
             for col in numeric_cols:
-                if col != result["date_column"]:
+                if col == result["date_column"]:
+                    continue
+                col_lower = col.lower()
+                if any(kw in col_lower for kw in value_keywords):
                     result["value_column"] = col
                     break
+
+            # If no value column found by keyword, use first numeric column
+            if not result["value_column"] and numeric_cols:
+                for col in numeric_cols:
+                    if col != result["date_column"]:
+                        result["value_column"] = col
+                        break
 
         return result
 
@@ -420,9 +472,11 @@ class DatasetService:
         search: Optional[str] = None
     ) -> Tuple[List[Dataset], int]:
         """List all datasets for the tenant from Redis"""
+        logger.info(f"Listing datasets for tenant: {self.tenant_id}")
         try:
             redis = await get_redis()
             if redis is None:
+                logger.warning("Redis not available for list_datasets")
                 return [], 0
 
             # Scan for all dataset metadata keys
@@ -432,6 +486,7 @@ class DatasetService:
 
             while True:
                 cursor, keys = await redis.scan(cursor, match=pattern, count=100)
+                logger.info(f"Found {len(keys)} dataset keys in Redis scan")
                 for key in keys:
                     data = await redis.get(key)
                     if data:
@@ -440,7 +495,10 @@ class DatasetService:
                         cached = json.loads(data)
 
                         # Filter by tenant
-                        if cached.get("tenant_id") != self.tenant_id:
+                        cached_tenant = cached.get("tenant_id")
+                        logger.debug(f"Dataset {cached.get('name')}: tenant={cached_tenant}, current={self.tenant_id}")
+                        if cached_tenant != self.tenant_id:
+                            logger.debug(f"Skipping dataset {cached.get('name')} - tenant mismatch")
                             continue
                         if not cached.get("is_active", True):
                             continue
@@ -448,6 +506,16 @@ class DatasetService:
                         # Apply search filter
                         if search and search.lower() not in cached.get("name", "").lower():
                             continue
+
+                        # Parse uploaded_at from cached data
+                        uploaded_at = None
+                        if cached.get("uploaded_at"):
+                            try:
+                                uploaded_at = datetime.fromisoformat(cached["uploaded_at"])
+                            except (ValueError, TypeError):
+                                uploaded_at = datetime.utcnow()
+                        else:
+                            uploaded_at = datetime.utcnow()
 
                         dataset = Dataset(
                             id=cached["id"],
@@ -457,11 +525,14 @@ class DatasetService:
                             redis_key=cached.get("redis_key"),
                             row_count=cached.get("row_count"),
                             column_count=cached.get("column_count"),
-                            columns=cached.get("columns"),
-                            entities=cached.get("entities"),
-                            file_size=cached.get("file_size"),
-                            file_type=cached.get("file_type"),
+                            columns=cached.get("columns") or [],
+                            entities=cached.get("entities") or [],
+                            file_size=cached.get("file_size") or 0,
+                            file_type=cached.get("file_type") or "csv",
+                            date_range=cached.get("date_range") or {},
+                            is_processed=cached.get("is_processed", False),
                             is_active=True,
+                            uploaded_at=uploaded_at,
                         )
                         datasets.append(dataset)
 
@@ -470,6 +541,7 @@ class DatasetService:
 
             # Sort by uploaded_at (newest first) - we don't have this field so sort by name
             total = len(datasets)
+            logger.info(f"Found {total} datasets for tenant {self.tenant_id}")
 
             # Apply pagination
             datasets = datasets[skip:skip + limit]
@@ -879,10 +951,14 @@ class DatasetService:
         return dataset
 
     def _generate_default_data(self) -> pd.DataFrame:
-        """Generate default sample data"""
+        """Generate default sample data with required columns: Date, Entity_ID, Entity_Name, Volume"""
         np.random.seed(42)
         dates = pd.date_range(start="2023-01-01", periods=365, freq="D")
-        entities = ["Product A", "Product B", "Product C"]
+        entities = [
+            {"Entity_ID": "PRD-001", "Entity_Name": "Product A"},
+            {"Entity_ID": "PRD-002", "Entity_Name": "Product B"},
+            {"Entity_ID": "PRD-003", "Entity_Name": "Product C"},
+        ]
 
         data = []
         for entity in entities:
@@ -894,18 +970,24 @@ class DatasetService:
 
             for i, date in enumerate(dates):
                 data.append({
-                    "date": date,
-                    "entity": entity,
-                    "value": max(0, values[i]),
+                    "Date": date,
+                    "Entity_ID": entity["Entity_ID"],
+                    "Entity_Name": entity["Entity_Name"],
+                    "Volume": max(0, round(values[i], 2)),
                 })
 
         return pd.DataFrame(data)
 
     def _generate_sales_data(self) -> pd.DataFrame:
-        """Generate sales sample data"""
+        """Generate sales sample data with required columns: Date, Entity_ID, Entity_Name, Volume"""
         np.random.seed(42)
         dates = pd.date_range(start="2023-01-01", periods=365, freq="D")
-        products = ["Widget A", "Widget B", "Gadget X", "Gadget Y"]
+        products = [
+            {"Entity_ID": "WGT-A", "Entity_Name": "Widget A"},
+            {"Entity_ID": "WGT-B", "Entity_Name": "Widget B"},
+            {"Entity_ID": "GDG-X", "Entity_Name": "Gadget X"},
+            {"Entity_ID": "GDG-Y", "Entity_Name": "Gadget Y"},
+        ]
 
         data = []
         for product in products:
@@ -918,18 +1000,22 @@ class DatasetService:
 
             for i, date in enumerate(dates):
                 data.append({
-                    "date": date,
-                    "product": product,
-                    "sales": max(0, round(sales[i], 2)),
+                    "Date": date,
+                    "Entity_ID": product["Entity_ID"],
+                    "Entity_Name": product["Entity_Name"],
+                    "Volume": max(0, round(sales[i], 2)),
                 })
 
         return pd.DataFrame(data)
 
     def _generate_energy_data(self) -> pd.DataFrame:
-        """Generate energy consumption sample data"""
+        """Generate energy consumption sample data with required columns: Date, Entity_ID, Entity_Name, Volume"""
         np.random.seed(42)
         dates = pd.date_range(start="2023-01-01", periods=365 * 24, freq="H")
-        locations = ["Building A", "Building B"]
+        locations = [
+            {"Entity_ID": "BLD-A", "Entity_Name": "Building A"},
+            {"Entity_ID": "BLD-B", "Entity_Name": "Building B"},
+        ]
 
         data = []
         for location in locations:
@@ -941,20 +1027,25 @@ class DatasetService:
 
             for i, date in enumerate(dates):
                 data.append({
-                    "timestamp": date,
-                    "location": location,
-                    "consumption_kwh": max(0, round(consumption[i], 2)),
+                    "Date": date,
+                    "Entity_ID": location["Entity_ID"],
+                    "Entity_Name": location["Entity_Name"],
+                    "Volume": max(0, round(consumption[i], 2)),
                 })
 
         # Sample to reduce size
         df = pd.DataFrame(data)
-        return df.sample(n=min(5000, len(df)), random_state=42).sort_values("timestamp")
+        return df.sample(n=min(5000, len(df)), random_state=42).sort_values("Date")
 
     def _generate_stock_data(self) -> pd.DataFrame:
-        """Generate stock price sample data"""
+        """Generate stock price sample data with required columns: Date, Entity_ID, Entity_Name, Volume"""
         np.random.seed(42)
         dates = pd.date_range(start="2023-01-01", periods=252, freq="B")  # Business days
-        stocks = ["ACME", "TECH", "RETAIL"]
+        stocks = [
+            {"Entity_ID": "ACME", "Entity_Name": "ACME Corp"},
+            {"Entity_ID": "TECH", "Entity_Name": "Tech Industries"},
+            {"Entity_ID": "RETAIL", "Entity_Name": "Retail Holdings"},
+        ]
 
         data = []
         for stock in stocks:
@@ -966,9 +1057,10 @@ class DatasetService:
 
             for i, date in enumerate(dates):
                 data.append({
-                    "date": date,
-                    "symbol": stock,
-                    "close_price": round(prices[i], 2),
+                    "Date": date,
+                    "Entity_ID": stock["Entity_ID"],
+                    "Entity_Name": stock["Entity_Name"],
+                    "Volume": round(prices[i], 2),
                 })
 
         return pd.DataFrame(data)

@@ -333,25 +333,28 @@ async def update_column_mapping(
 
 @router.get("/templates/info", response_model=List[TemplateInfo])
 async def get_templates():
-    """Get available template information"""
+    """Get available template information.
+
+    All templates use the required column format: Date, Entity_ID, Entity_Name, Volume
+    """
     templates = [
         TemplateInfo(
-            name="Basic Time Series",
-            description="Simple date and value columns",
-            columns=["date", "value"],
-            sample_rows=3
+            name="Standard Forecast Template",
+            description="Required format: Date, Entity_ID, Entity_Name, Volume",
+            columns=["Date", "Entity_ID", "Entity_Name", "Volume"],
+            sample_rows=4
         ),
         TemplateInfo(
-            name="Multi-Entity Time Series",
-            description="Time series with multiple entities/products",
-            columns=["date", "entity", "value"],
-            sample_rows=3
+            name="Sales Forecast Template",
+            description="Sales data with required columns",
+            columns=["Date", "Entity_ID", "Entity_Name", "Volume"],
+            sample_rows=4
         ),
         TemplateInfo(
-            name="Sales Forecast",
-            description="Sales data with product and quantity",
-            columns=["date", "product", "sales", "quantity"],
-            sample_rows=3
+            name="Energy Forecast Template",
+            description="Energy consumption data with required columns",
+            columns=["Date", "Entity_ID", "Entity_Name", "Volume"],
+            sample_rows=4
         ),
     ]
     return templates
@@ -361,35 +364,46 @@ async def get_templates():
 async def download_template(
     template_type: str = Query("basic", description="Template type: basic, multi_entity, sales")
 ):
-    """Download a CSV template file"""
+    """Download a CSV template file.
+
+    All templates use the required column format: Date, Entity_ID, Entity_Name, Volume
+    """
+    # All templates use the required columns: Date, Entity_ID, Entity_Name, Volume
     templates = {
         "basic": {
-            "filename": "lucent_basic_template.csv",
-            "columns": ["date", "value"],
+            "filename": "lucent_forecast_template.csv",
+            "columns": ["Date", "Entity_ID", "Entity_Name", "Volume"],
             "data": [
-                ["2024-01-01", 100],
-                ["2024-01-02", 105],
-                ["2024-01-03", 98],
+                ["2024-01-01", "PRD-001", "Product A", 100],
+                ["2024-01-01", "PRD-002", "Product B", 150],
+                ["2024-01-02", "PRD-001", "Product A", 105],
+                ["2024-01-02", "PRD-002", "Product B", 145],
+                ["2024-01-03", "PRD-001", "Product A", 98],
+                ["2024-01-03", "PRD-002", "Product B", 160],
             ]
         },
         "multi_entity": {
             "filename": "lucent_multi_entity_template.csv",
-            "columns": ["date", "entity", "value"],
+            "columns": ["Date", "Entity_ID", "Entity_Name", "Volume"],
             "data": [
-                ["2024-01-01", "Product A", 100],
-                ["2024-01-01", "Product B", 150],
-                ["2024-01-02", "Product A", 105],
-                ["2024-01-02", "Product B", 145],
+                ["2024-01-01", "SKU-001", "Widget A", 100],
+                ["2024-01-01", "SKU-002", "Widget B", 150],
+                ["2024-01-01", "SKU-003", "Gadget X", 200],
+                ["2024-01-02", "SKU-001", "Widget A", 105],
+                ["2024-01-02", "SKU-002", "Widget B", 145],
+                ["2024-01-02", "SKU-003", "Gadget X", 210],
             ]
         },
         "sales": {
             "filename": "lucent_sales_template.csv",
-            "columns": ["date", "product", "sales", "quantity"],
+            "columns": ["Date", "Entity_ID", "Entity_Name", "Volume"],
             "data": [
-                ["2024-01-01", "Widget A", 1000.50, 10],
-                ["2024-01-01", "Widget B", 1500.75, 15],
-                ["2024-01-02", "Widget A", 1050.25, 11],
-                ["2024-01-02", "Widget B", 1480.00, 14],
+                ["2024-01-01", "WGT-A", "Widget A", 1000],
+                ["2024-01-01", "WGT-B", "Widget B", 1500],
+                ["2024-01-02", "WGT-A", "Widget A", 1050],
+                ["2024-01-02", "WGT-B", "Widget B", 1480],
+                ["2024-01-03", "WGT-A", "Widget A", 980],
+                ["2024-01-03", "WGT-B", "Widget B", 1520],
             ]
         }
     }

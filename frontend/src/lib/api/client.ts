@@ -17,11 +17,24 @@ const apiClient: AxiosInstance = axios.create({
 // Request interceptor - Add auth token
 apiClient.interceptors.request.use(
   (config) => {
+    // Don't overwrite if Authorization header is already set (check both ways for axios compatibility)
+    const existingAuth = config.headers.get ? config.headers.get('Authorization') : config.headers.Authorization;
+    if (existingAuth) {
+      return config;
+    }
+
     // Get token from localStorage or session
     if (typeof window !== 'undefined') {
-      const token = localStorage.getItem('token');
-      if (token) {
-        config.headers.Authorization = `Bearer ${token}`;
+      // Check for platform admin token first (for /platform/* and /admin/* routes)
+      const platformToken = localStorage.getItem('platform_token');
+      const regularToken = localStorage.getItem('token');
+
+      // Use platform token for platform routes, otherwise use regular token
+      const url = config.url || '';
+      if ((url.startsWith('/platform') || url.startsWith('/admin')) && platformToken) {
+        config.headers.set('Authorization', `Bearer ${platformToken}`);
+      } else if (regularToken) {
+        config.headers.set('Authorization', `Bearer ${regularToken}`);
       }
     }
     return config;
@@ -43,9 +56,25 @@ apiClient.interceptors.response.use(
 
       switch (status) {
         case 401:
-          // Unauthorized - redirect to tenant login
+          // Unauthorized - redirect to appropriate login
           if (typeof window !== 'undefined') {
-            // Get tenant from stored user or URL
+            const basePath = '/lucent';
+            const pathParts = window.location.pathname.split('/');
+
+            // Check if this is a platform admin route
+            const isPlatformRoute = pathParts.includes('admin') ||
+              error.config?.url?.startsWith('/platform') ||
+              error.config?.url?.startsWith('/admin');
+
+            if (isPlatformRoute) {
+              // Platform admin - clear platform tokens and redirect to platform login
+              localStorage.removeItem('platform_token');
+              localStorage.removeItem('platform_admin');
+              window.location.href = `${basePath}/login`;
+              break;
+            }
+
+            // Tenant user - get tenant from stored user or URL
             const storedUser = localStorage.getItem('user');
             let tenantSlug = null;
 
@@ -60,7 +89,6 @@ apiClient.interceptors.response.use(
 
             // Fallback: try to get tenant from current URL
             if (!tenantSlug) {
-              const pathParts = window.location.pathname.split('/');
               // URL structure: /lucent/{tenant}/... or /{tenant}/...
               if (pathParts[1] === 'lucent' && pathParts[2] && pathParts[2] !== 'login' && pathParts[2] !== 'admin') {
                 tenantSlug = pathParts[2];
@@ -72,8 +100,7 @@ apiClient.interceptors.response.use(
             localStorage.removeItem('token');
             localStorage.removeItem('user');
 
-            // Redirect to tenant login or platform login (include basePath)
-            const basePath = '/lucent';
+            // Redirect to tenant login
             if (tenantSlug) {
               window.location.href = `${basePath}/${tenantSlug}/login`;
             } else {
