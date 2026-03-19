@@ -1,12 +1,20 @@
 """
-Connector Service - Database connection and column discovery
+Connector Service - Database connection, column discovery, and data access
 """
 import json
-from typing import List, Any, Dict
+import logging
+from typing import List, Any, Dict, Optional
+
+import pandas as pd
 from cryptography.fernet import Fernet
 
 from app.models.connector import Connector, ConnectorType
 from app.config import settings
+from app.connectors import get_connector
+from app.core.validators import sanitize_sql_query, sanitize_file_path
+from app.connectors.base import validate_sql_identifier
+
+logger = logging.getLogger(__name__)
 
 
 def decrypt_config(encrypted_config: str) -> Dict[str, Any]:
@@ -23,6 +31,107 @@ def decrypt_config(encrypted_config: str) -> Dict[str, Any]:
     except Exception:
         # Fallback: try as plain JSON
         return json.loads(encrypted_config)
+
+
+# ============================================================
+# High-level service methods used by the API endpoints
+# ============================================================
+
+async def test_connector_connection(connector: Connector) -> tuple[bool, str]:
+    """
+    Decrypt the connector's stored config, instantiate the appropriate
+    connector class, and run a connection test.
+
+    Returns:
+        (True, success_message) or (False, error_message)
+    """
+    try:
+        config = decrypt_config(connector.config)
+    except Exception as exc:
+        logger.warning("Failed to decrypt config for connector %s: %s", connector.id, exc)
+        return False, "Could not read connector configuration"
+
+    try:
+        conn = get_connector(connector.type.value, config, connector.tenant_id)
+    except ValueError as exc:
+        return False, str(exc)
+
+    return await conn.test_connection()
+
+
+async def fetch_connector_data(
+    connector: Connector,
+    query: Optional[str] = None,
+    table: Optional[str] = None,
+    filters: Optional[Dict[str, Any]] = None,
+    limit: int = 1000,
+) -> pd.DataFrame:
+    """
+    Decrypt the connector's stored config, instantiate the appropriate
+    connector class, and fetch data as a pandas DataFrame.
+
+    Args:
+        connector: Connector ORM object
+        query:     SQL query string (database connectors) or file key (storage connectors)
+        table:     Table name or file path (used when no explicit query given)
+        filters:   Optional dict of column → value filters
+        limit:     Maximum number of rows to return
+
+    Returns:
+        pandas DataFrame
+    """
+    try:
+        config = decrypt_config(connector.config)
+    except Exception as exc:
+        logger.warning("Failed to decrypt config for connector %s: %s", connector.id, exc)
+        raise ValueError("Could not read connector configuration") from exc
+
+    conn = get_connector(connector.type.value, config, connector.tenant_id)
+
+    # If neither query nor table supplied, attempt to fall back to config defaults
+    effective_query = query or config.get("query")
+    effective_table = table or config.get("table") or config.get("key") or config.get("blob_name")
+
+    # --- Security: sanitise user-supplied inputs ---
+    is_db_connector = connector.type.value in ("postgres", "mysql", "snowflake", "sqlserver", "bigquery")
+    is_storage_connector = connector.type.value in ("s3", "azure_blob", "gcs")
+
+    if effective_query and is_db_connector:
+        # Only allow read-only SELECT statements against database connectors
+        effective_query = sanitize_sql_query(effective_query)
+
+    if effective_table and is_storage_connector:
+        # Prevent path traversal on cloud storage file keys / blob names
+        effective_table = sanitize_file_path(effective_table, param_name="table/file path")
+
+    if effective_query and is_storage_connector:
+        # For storage connectors, query is used as a file key — sanitise it too
+        effective_query = sanitize_file_path(effective_query, param_name="query/file path")
+
+    return await conn.fetch_data(
+        query=effective_query,
+        table=effective_table,
+        filters=filters,
+        limit=limit,
+    )
+
+
+async def list_connector_resources(connector: Connector) -> List[str]:
+    """
+    Decrypt the connector's stored config, instantiate the appropriate
+    connector class, and list available tables / files.
+
+    Returns:
+        List of resource name strings
+    """
+    try:
+        config = decrypt_config(connector.config)
+    except Exception as exc:
+        logger.warning("Failed to decrypt config for connector %s: %s", connector.id, exc)
+        raise ValueError("Could not read connector configuration") from exc
+
+    conn = get_connector(connector.type.value, config, connector.tenant_id)
+    return await conn.list_resources()
 
 
 async def get_connector_columns_from_db(connector: Connector) -> List[str]:
@@ -226,7 +335,9 @@ async def _get_snowflake_columns(config: Dict[str, Any]) -> List[str]:
     try:
         cur = conn.cursor()
         if table:
-            cur.execute(f"DESCRIBE TABLE {schema}.{table}")
+            safe_schema = validate_sql_identifier(schema, "schema")
+            safe_table = validate_sql_identifier(table, "table")
+            cur.execute(f'DESCRIBE TABLE "{safe_schema}"."{safe_table}"')
             rows = cur.fetchall()
             return [row[0] for row in rows]  # Column name is first field
         elif query:

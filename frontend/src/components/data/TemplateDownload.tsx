@@ -28,6 +28,12 @@ const templates: Template[] = [
     type: "basic",
   },
   {
+    id: "extended",
+    name: "Extended Template (with Regressors)",
+    description: "Adds Marketing, Temperature & Match events for Prophet",
+    type: "extended",
+  },
+  {
     id: "multi_entity",
     name: "Multi-Entity Template",
     description: "Multiple products/SKUs format",

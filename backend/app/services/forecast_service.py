@@ -26,6 +26,9 @@ logger = logging.getLogger(__name__)
 REDIS_FORECAST_PREFIX = "forecast:"
 REDIS_FORECAST_TTL = 3600  # 1 hour
 
+# Strong references to background tasks to prevent GC from cancelling them
+_background_tasks: set = set()
+
 
 class ForecastService:
     """Service for running forecasts and managing results"""
@@ -45,26 +48,33 @@ class ForecastService:
         entity_id: str,
         date_column: Optional[str] = None,
         value_column: Optional[str] = None,
-        entity_column: Optional[str] = None
-    ) -> Tuple[Optional[pd.Series], Optional[str]]:
+        entity_column: Optional[str] = None,
+        regressor_columns: Optional[List[str]] = None
+    ) -> Tuple[Optional[pd.Series], Optional[str], Optional[pd.DataFrame]]:
         """
         Get time series data for forecasting.
         Falls back to raw data if no preprocessing exists.
+        Returns (series, error, exog_df) where exog_df contains regressor columns if available.
         """
         try:
             # Get data - preprocessing service already handles fallback to raw data
             if entity_id and entity_id != "All Data":
+                logger.info(f"_get_forecast_data: fetching entity={entity_id!r}, entity_column={entity_column!r}")
                 df = await self.preprocessing_service.get_entity_data(
                     dataset_id, entity_id, entity_column
                 )
             else:
+                logger.info(f"_get_forecast_data: fetching full dataset for entity_id={entity_id!r}")
                 df = await self.preprocessing_service.get_dataset_dataframe(dataset_id)
 
             if df is None:
-                return None, "Dataset not found or expired"
+                logger.warning(f"_get_forecast_data: df is None for dataset={dataset_id}")
+                return None, "Dataset not found or expired", None
+
+            logger.info(f"_get_forecast_data: got {len(df)} rows, columns={list(df.columns)}")
 
             if len(df) == 0:
-                return None, "Dataset is empty"
+                return None, "Dataset is empty", None
 
             # Auto-detect columns if not specified
             if not date_column:
@@ -73,14 +83,14 @@ class ForecastService:
                 value_column = self._detect_value_column(df)
 
             if not date_column:
-                return None, "Could not detect date column. Please specify date_column."
+                return None, "Could not detect date column. Please specify date_column.", None
             if not value_column:
-                return None, "Could not detect value column. Please specify value_column."
+                return None, "Could not detect value column. Please specify value_column.", None
 
             if date_column not in df.columns:
-                return None, f"Date column '{date_column}' not found in dataset"
+                return None, f"Date column '{date_column}' not found in dataset", None
             if value_column not in df.columns:
-                return None, f"Value column '{value_column}' not found in dataset"
+                return None, f"Value column '{value_column}' not found in dataset", None
 
             # Prepare time series
             df[date_column] = pd.to_datetime(df[date_column], errors='coerce')
@@ -92,7 +102,7 @@ class ForecastService:
             df = df.dropna(subset=[value_column])
 
             if len(df) < 10:
-                return None, f"Insufficient data points ({len(df)}). Need at least 10 observations."
+                return None, f"Insufficient data points ({len(df)}). Need at least 10 observations.", None
 
             # Create series with date index
             series = pd.Series(
@@ -101,19 +111,61 @@ class ForecastService:
                 name=value_column
             )
 
-            return series, None
+            # Extract regressor columns (exogenous variables)
+            exog_df = None
+            core_columns = {date_column, value_column}
+            if entity_column:
+                core_columns.add(entity_column)
+            # Also exclude Entity_ID and Entity_Name by convention
+            core_columns.update({"Entity_ID", "Entity_Name", "entity_id", "entity_name"})
+
+            if regressor_columns:
+                # Use explicitly specified regressors
+                available = [c for c in regressor_columns if c in df.columns]
+                if available:
+                    exog_df = df[[date_column] + available].copy()
+                    exog_df.set_index(date_column, inplace=True)
+                    for col in available:
+                        exog_df[col] = pd.to_numeric(exog_df[col], errors='coerce')
+                    # Fill NaN with column mean (don't drop rows)
+                    col_means = exog_df.mean(numeric_only=True)
+                    exog_df = exog_df.fillna(col_means)
+                    exog_df = exog_df.dropna(axis=1, how='all')  # drop columns still all-NaN
+            else:
+                # Auto-detect: any extra numeric column not in core columns
+                extra_cols = [c for c in df.columns if c not in core_columns]
+                numeric_extras = []
+                for col in extra_cols:
+                    converted = pd.to_numeric(df[col], errors='coerce')
+                    # Require 90%+ valid numeric values to qualify as a regressor
+                    if converted.notna().sum() > len(df) * 0.9:
+                        numeric_extras.append(col)
+                if numeric_extras:
+                    exog_df = df[[date_column] + numeric_extras].copy()
+                    exog_df.set_index(date_column, inplace=True)
+                    for col in numeric_extras:
+                        exog_df[col] = pd.to_numeric(exog_df[col], errors='coerce')
+                    col_means = exog_df.mean(numeric_only=True)
+                    exog_df = exog_df.fillna(col_means)
+                    exog_df = exog_df.dropna(axis=1, how='all')
+
+            return series, None, exog_df
 
         except Exception as e:
             logger.error(f"Error preparing forecast data: {e}")
-            return None, str(e)
+            return None, str(e), None
 
     # ============================================
     # Forecast Execution
     # ============================================
 
-    async def run_forecast(self, request: ForecastRequest) -> ForecastResultResponse:
+    async def run_forecast(
+        self,
+        request: ForecastRequest,
+        forecast_id: Optional[str] = None,
+    ) -> ForecastResultResponse:
         """Run a single forecast"""
-        forecast_id = str(uuid.uuid4())
+        forecast_id = forecast_id or str(uuid.uuid4())
 
         # Initialize result
         result = ForecastResultResponse(
@@ -134,19 +186,28 @@ class ForecastService:
             result.progress = 10
             await self._store_result(result)
 
-            series, error = await self._get_forecast_data(
+            logger.info(f"Forecast: entity_id={request.entity_id!r}, dataset={request.dataset_id}, method={request.method}, entity_column={request.entity_column!r}")
+
+            series, error, exog_df = await self._get_forecast_data(
                 request.dataset_id,
                 request.entity_id,
                 request.date_column,
                 request.value_column,
-                request.entity_column
+                request.entity_column,
+                request.regressor_columns
             )
 
             if error:
+                logger.warning(f"Forecast data error for entity={request.entity_id!r}: {error}")
                 result.status = ForecastStatus.FAILED
                 result.error = error
                 await self._store_result(result)
                 return result
+
+            logger.info(f"Forecast data OK: series_len={len(series)}, exog={exog_df.columns.tolist() if exog_df is not None else None}")
+
+            # Only pass exog to Prophet (ARIMA/ETS don't support it in our implementation)
+            use_exog = exog_df if (request.method == ForecastMethod.PROPHET and exog_df is not None and len(exog_df.columns) > 0) else None
 
             result.progress = 30
             await self._store_result(result)
@@ -158,13 +219,13 @@ class ForecastService:
             result.progress = 50
             await self._store_result(result)
 
-            forecaster.fit(series)
+            forecaster.fit(series, exog=use_exog)
 
             result.progress = 70
             await self._store_result(result)
 
             # Generate predictions
-            output = forecaster.predict(request.horizon)
+            output = forecaster.predict(request.horizon, exog=use_exog)
 
             result.progress = 90
             await self._store_result(result)
@@ -189,7 +250,8 @@ class ForecastService:
                     'residual_mean': round(float(np.mean(output.residuals)), 4) if output.residuals is not None else None,
                     'residual_std': round(float(np.std(output.residuals)), 4) if output.residuals is not None else None,
                     **{k: v for k, v in output.model_summary.items() if k not in ['method', 'parameters', 'coefficients']}
-                }
+                },
+                regressors_used=list(use_exog.columns) if use_exog is not None else None
             )
 
             result.status = ForecastStatus.COMPLETED
@@ -204,42 +266,133 @@ class ForecastService:
         await self._store_result(result)
         return result
 
-    async def run_batch_forecast(
+    async def start_batch_forecast(
         self,
         request: BatchForecastRequest
     ) -> BatchForecastStatusResponse:
-        """Run forecasts for multiple entities"""
+        """Start a batch forecast — returns immediately, processes in background."""
         batch_id = str(uuid.uuid4())
-        results = []
 
-        for i, entity_id in enumerate(request.entity_ids):
-            single_request = ForecastRequest(
-                dataset_id=request.dataset_id,
-                entity_id=entity_id,
-                method=request.method,
-                horizon=request.horizon,
-                frequency=request.frequency,
-                confidence_level=request.confidence_level,
-                arima_settings=request.arima_settings,
-                ets_settings=request.ets_settings,
-                prophet_settings=request.prophet_settings
-            )
-
-            result = await self.run_forecast(single_request)
-            results.append(result)
-
-        completed = sum(1 for r in results if r.status == ForecastStatus.COMPLETED)
-        failed = sum(1 for r in results if r.status == ForecastStatus.FAILED)
-
-        return BatchForecastStatusResponse(
+        # Store initial batch status in Redis
+        initial_status = BatchForecastStatusResponse(
             batch_id=batch_id,
             total=len(request.entity_ids),
-            completed=completed,
-            failed=failed,
-            in_progress=0,
-            status=ForecastStatus.COMPLETED if failed == 0 else ForecastStatus.FAILED,
-            results=results
+            completed=0,
+            failed=0,
+            in_progress=len(request.entity_ids),
+            status=ForecastStatus.RUNNING,
+            results=[]
         )
+        await self._store_batch_status(batch_id, initial_status)
+
+        # Launch background task with strong reference to prevent GC
+        import asyncio
+        loop = asyncio.get_running_loop()
+        task = loop.create_task(self._run_batch_background(batch_id, request))
+        _background_tasks.add(task)
+        task.add_done_callback(_background_tasks.discard)
+
+        return initial_status
+
+    async def _run_batch_background(
+        self,
+        batch_id: str,
+        request: BatchForecastRequest
+    ) -> None:
+        """Background worker that processes batch entities one by one."""
+        results: List[ForecastResultResponse] = []
+
+        try:
+            # Auto-detect entity column once for the whole batch
+            entity_column = None
+            try:
+                df = await self.preprocessing_service.get_dataset_dataframe(request.dataset_id)
+                if df is not None:
+                    entity_column = self.preprocessing_service._detect_entity_column(df)
+                    logger.info(f"Batch forecast: detected entity_column={entity_column!r}, entities={request.entity_ids}")
+            except Exception as e:
+                logger.warning(f"Batch: could not detect entity column: {e}")
+
+            for i, entity_id in enumerate(request.entity_ids):
+                single_request = ForecastRequest(
+                    dataset_id=request.dataset_id,
+                    entity_id=entity_id,
+                    entity_column=entity_column,
+                    method=request.method,
+                    horizon=request.horizon,
+                    frequency=request.frequency,
+                    confidence_level=request.confidence_level,
+                    arima_settings=request.arima_settings,
+                    ets_settings=request.ets_settings,
+                    prophet_settings=request.prophet_settings,
+                    regressor_columns=request.regressor_columns
+                )
+
+                result = await self.run_forecast(single_request)
+                results.append(result)
+
+                # Update batch status in Redis after each entity
+                completed = sum(1 for r in results if r.status == ForecastStatus.COMPLETED)
+                failed = sum(1 for r in results if r.status == ForecastStatus.FAILED)
+                remaining = len(request.entity_ids) - len(results)
+
+                batch_status = BatchForecastStatusResponse(
+                    batch_id=batch_id,
+                    total=len(request.entity_ids),
+                    completed=completed,
+                    failed=failed,
+                    in_progress=remaining,
+                    status=ForecastStatus.RUNNING if remaining > 0 else (
+                        ForecastStatus.COMPLETED if completed > 0 else ForecastStatus.FAILED
+                    ),
+                    results=results
+                )
+                await self._store_batch_status(batch_id, batch_status)
+
+            logger.info(f"Batch {batch_id} finished: {sum(1 for r in results if r.status == ForecastStatus.COMPLETED)}/{len(results)} completed")
+
+        except Exception as e:
+            # Top-level handler: mark batch as FAILED so it doesn't stay stuck as "running"
+            logger.error(f"Batch {batch_id} crashed: {e}", exc_info=True)
+            failed_status = BatchForecastStatusResponse(
+                batch_id=batch_id,
+                total=len(request.entity_ids),
+                completed=sum(1 for r in results if r.status == ForecastStatus.COMPLETED),
+                failed=len(request.entity_ids) - sum(1 for r in results if r.status == ForecastStatus.COMPLETED),
+                in_progress=0,
+                status=ForecastStatus.FAILED,
+                results=results
+            )
+            await self._store_batch_status(batch_id, failed_status)
+
+    async def _store_batch_status(self, batch_id: str, status: BatchForecastStatusResponse) -> None:
+        """Store batch forecast status in Redis."""
+        try:
+            redis = await get_redis()
+            if redis is None:
+                return
+            key = f"forecast_batch:{batch_id}"
+            data = status.model_dump(mode='json')
+            await redis.set(key, json.dumps(data, default=str), ex=REDIS_FORECAST_TTL)
+        except Exception as e:
+            logger.error(f"Error storing batch status: {e}")
+
+    async def get_batch_status(self, batch_id: str) -> Optional[BatchForecastStatusResponse]:
+        """Get batch forecast status from Redis."""
+        try:
+            redis = await get_redis()
+            if redis is None:
+                return None
+            key = f"forecast_batch:{batch_id}"
+            data = await redis.get(key)
+            if data:
+                if isinstance(data, bytes):
+                    data = data.decode('utf-8')
+                return BatchForecastStatusResponse(**json.loads(data))
+            return None
+        except Exception as e:
+            logger.error(f"Error getting batch status: {e}")
+            return None
 
     # ============================================
     # Auto Parameter Detection
@@ -252,7 +405,7 @@ class ForecastService:
         entity_id: str
     ) -> AutoParamsResponse:
         """Auto-detect optimal parameters for a method"""
-        series, error = await self._get_forecast_data(dataset_id, entity_id)
+        series, error, _ = await self._get_forecast_data(dataset_id, entity_id)
         if error:
             raise ValueError(error)
 
@@ -502,7 +655,7 @@ class ForecastService:
             'std': round(float(y.std()), 4),
             'min': round(float(y.min()), 4),
             'max': round(float(y.max()), 4),
-            'has_missing': series.isna().any(),
+            'has_missing': bool(series.isna().any()),
             'missing_count': int(series.isna().sum())
         }
 
@@ -523,8 +676,8 @@ class ForecastService:
         try:
             from statsmodels.tsa.stattools import adfuller
             result = adfuller(y, autolag='AIC')
-            characteristics['is_stationary'] = result[1] < 0.05
-            characteristics['adf_pvalue'] = round(result[1], 4)
+            characteristics['is_stationary'] = bool(result[1] < 0.05)
+            characteristics['adf_pvalue'] = round(float(result[1]), 4)
         except Exception:
             characteristics['is_stationary'] = None
 

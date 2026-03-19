@@ -1,9 +1,13 @@
 export { DatasetSelector } from "./DatasetSelector";
-export { EntitySelector } from "./EntitySelector";
+export { EntitySelector, ALL_ENTITIES_VALUE } from "./EntitySelector";
+export type { Entity } from "./EntitySelector";
 export { MethodSelector } from "./MethodSelector";
 export { ForecastSettings } from "./ForecastSettings";
 export { ARIMASettings } from "./ARIMASettings";
 export { ETSSettings } from "./ETSSettings";
 export { ProphetSettings } from "./ProphetSettings";
+export { CrossValidationSettings } from "./CrossValidationSettings";
+export { RegressorSelector } from "./RegressorSelector";
 export { ForecastProgress } from "./ForecastProgress";
 export { ForecastResults } from "./ForecastResults";
+export { BatchForecastResults } from "./BatchForecastResults";

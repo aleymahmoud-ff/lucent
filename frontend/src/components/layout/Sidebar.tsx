@@ -10,6 +10,7 @@ import {
   FileText,
   Home,
   LineChart,
+  Plug,
   Settings,
   TrendingUp,
   Users,
@@ -23,6 +24,7 @@ import {
 const navigationItems = [
   { name: 'Dashboard', path: '/dashboard', icon: Home },
   { name: 'Data', path: '/data', icon: Database },
+  { name: 'Connectors', path: '/connectors', icon: Plug },
   { name: 'Preprocessing', path: '/preprocessing', icon: FileText },
   { name: 'Forecast', path: '/forecast', icon: TrendingUp },
   { name: 'Results', path: '/results', icon: LineChart },
@@ -33,7 +35,7 @@ const navigationItems = [
 const adminNavigationItems = [
   { name: 'Users', path: '/settings/users', icon: Users },
   { name: 'Groups', path: '/settings/groups', icon: UsersRound },
-  { name: 'Connectors', path: '/settings/connectors', icon: Link2 },
+  { name: 'Connector RLS', path: '/settings/connectors', icon: Link2 },
   { name: 'Branding', path: '/settings/branding', icon: Palette },
 ];
 

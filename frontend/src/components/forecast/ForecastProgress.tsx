@@ -1,21 +1,17 @@
 "use client";
 
+import { useEffect, useRef } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import { Loader2, CheckCircle2, XCircle, Clock } from "lucide-react";
 import { cn } from "@/lib/utils";
-
-interface ForecastResult {
-  id: string;
-  status: "pending" | "running" | "completed" | "failed";
-  progress: number;
-  error?: string;
-}
+import { api } from "@/lib/api/client";
 
 interface ForecastProgressProps {
   isRunning: boolean;
-  result: ForecastResult | null;
+  result: { id: string; status: "pending" | "running" | "completed" | "failed"; progress: number; error?: string } | null;
+  onStatusUpdate?: (result: any) => void;
 }
 
 const statusConfig = {
@@ -45,11 +41,56 @@ const statusConfig = {
   },
 };
 
-export function ForecastProgress({ isRunning, result }: ForecastProgressProps) {
+const POLL_INTERVAL_MS = 2000;
+
+export function ForecastProgress({ isRunning, result, onStatusUpdate }: ForecastProgressProps) {
+  const pollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Auto-poll forecast status when we have an ID and it's still running
+  useEffect(() => {
+    const shouldPoll =
+      result?.id &&
+      (result.status === "pending" || result.status === "running");
+
+    if (!shouldPoll) {
+      if (pollTimerRef.current) {
+        clearTimeout(pollTimerRef.current);
+        pollTimerRef.current = null;
+      }
+      return;
+    }
+
+    const poll = async () => {
+      try {
+        const updated = await api.get<any>(`/forecast/status/${result.id}`);
+        if (onStatusUpdate) {
+          onStatusUpdate(updated);
+        }
+
+        // Continue polling only if still in-progress
+        if (updated.status === "pending" || updated.status === "running") {
+          pollTimerRef.current = setTimeout(poll, POLL_INTERVAL_MS);
+        }
+      } catch {
+        // Silently stop polling on error — the parent component handles errors
+        pollTimerRef.current = null;
+      }
+    };
+
+    pollTimerRef.current = setTimeout(poll, POLL_INTERVAL_MS);
+
+    return () => {
+      if (pollTimerRef.current) {
+        clearTimeout(pollTimerRef.current);
+        pollTimerRef.current = null;
+      }
+    };
+  }, [result?.id, result?.status, onStatusUpdate]);
+
   const status = result?.status || (isRunning ? "running" : "pending");
   const config = statusConfig[status];
   const Icon = config.icon;
-  const progress = result?.progress || (isRunning ? 0 : 0);
+  const progress = result?.progress ?? (isRunning ? 0 : 0);
 
   return (
     <Card>
@@ -163,7 +204,11 @@ function ProgressStep({
       <span
         className={cn(
           "text-sm",
-          completed ? "text-foreground" : active ? "text-foreground font-medium" : "text-muted-foreground"
+          completed
+            ? "text-foreground"
+            : active
+            ? "text-foreground font-medium"
+            : "text-muted-foreground"
         )}
       >
         {label}

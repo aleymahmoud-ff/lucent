@@ -29,8 +29,8 @@ async def init_redis():
         await redis_client.ping()
         logger.info("✅ Redis connection established")
     except Exception as e:
-        logger.error(f"❌ Redis connection failed: {e}")
-        raise
+        logger.warning(f"⚠️ Redis connection failed (non-fatal): {e}")
+        redis_client = None
 
 
 async def close_redis():

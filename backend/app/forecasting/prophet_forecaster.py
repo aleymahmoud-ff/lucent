@@ -2,7 +2,7 @@
 Prophet Forecaster - Facebook Prophet implementation
 """
 import warnings
-from typing import Dict, Any, Optional, Union
+from typing import Dict, Any, Optional, Union, List
 import pandas as pd
 import numpy as np
 import logging
@@ -55,6 +55,8 @@ class ProphetForecaster(BaseForecaster):
         self.daily_seasonality = daily_seasonality
         self.holidays_prior_scale = holidays_prior_scale
         self._df_train = None
+        self._regressor_columns: List[str] = []
+        self._regressor_means: Dict[str, float] = {}
 
     def fit(self, y: pd.Series, exog: Optional[pd.DataFrame] = None) -> None:
         """Fit Prophet model to the data"""
@@ -78,7 +80,35 @@ class ProphetForecaster(BaseForecaster):
             logger.warning("Multiplicative seasonality requires positive values. Switching to additive.")
             self.seasonality_mode = 'additive'
 
+        # Add regressor columns to training data if provided
+        self._regressor_columns = []
+        self._regressor_means = {}
+        if exog is not None and len(exog.columns) > 0:
+            for col in exog.columns:
+                # Align by date index
+                aligned = exog[col].reindex(y.index)
+                numeric_vals = pd.to_numeric(aligned, errors='coerce')
+                # Only use columns with sufficient non-null data
+                if numeric_vals.notna().sum() > len(y) * 0.5:
+                    self._regressor_columns.append(col)
+                    mean_val = float(numeric_vals.mean())
+                    self._regressor_means[col] = mean_val
+                    self._df_train[col] = numeric_vals.fillna(mean_val).values
+
+            if self._regressor_columns:
+                logger.info(f"Prophet using regressors: {self._regressor_columns}")
+
         try:
+            # Verify CmdStan is available before attempting to fit
+            try:
+                import cmdstanpy
+                cmdstanpy.cmdstan_path()
+            except (ImportError, ValueError):
+                raise ValueError(
+                    "Prophet requires CmdStan which is not installed on this server. "
+                    "Please use ARIMA or ETS methods instead."
+                )
+
             # Initialize Prophet model
             self.model = Prophet(
                 changepoint_prior_scale=self.changepoint_prior_scale,
@@ -91,11 +121,17 @@ class ProphetForecaster(BaseForecaster):
                 interval_width=self.confidence_level
             )
 
+            # Register regressors before fitting
+            for col in self._regressor_columns:
+                self.model.add_regressor(col)
+
             # Fit the model
             self.model.fit(self._df_train)
             self.is_fitted = True
             logger.info("Prophet model fitted successfully")
 
+        except ValueError:
+            raise
         except Exception as e:
             logger.error(f"Prophet fitting failed: {e}")
             raise ValueError(f"Failed to fit Prophet model: {str(e)}")
@@ -115,6 +151,22 @@ class ProphetForecaster(BaseForecaster):
 
         # Create future dataframe
         future = self.model.make_future_dataframe(periods=horizon, freq=freq)
+
+        # Add regressor columns to future dataframe
+        if self._regressor_columns:
+            for col in self._regressor_columns:
+                # For historical dates, use actual values from training data
+                col_values = []
+                for ds in future['ds']:
+                    # Check if this date exists in training data
+                    match = self._df_train[self._df_train['ds'] == ds]
+                    if len(match) > 0 and col in self._df_train.columns:
+                        col_values.append(float(match[col].iloc[0]))
+                    else:
+                        # Future dates: use mean value as default
+                        col_values.append(self._regressor_means.get(col, 0.0))
+                future[col] = col_values
+
         forecast = self.model.predict(future)
 
         # Extract only future predictions
@@ -129,7 +181,6 @@ class ProphetForecaster(BaseForecaster):
         })
 
         # Calculate metrics on historical fit
-        # Merge predictions with training data to ensure alignment
         historical = forecast[forecast['ds'].isin(self._df_train['ds'])]
         merged = self._df_train.merge(historical[['ds', 'yhat']], on='ds', how='inner')
 
@@ -156,6 +207,10 @@ class ProphetForecaster(BaseForecaster):
                 'daily_seasonality': self.daily_seasonality,
             }
         }
+
+        # Add regressor info
+        if self._regressor_columns:
+            model_summary['regressors'] = self._regressor_columns
 
         # Add detected changepoints
         try:

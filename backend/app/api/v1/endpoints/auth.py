@@ -11,6 +11,7 @@ import uuid
 from app.core.deps import get_db, get_current_active_user
 from app.core.security import verify_password, get_password_hash, create_access_token
 from app.schemas.auth import UserRegister, UserLogin, AuthResponse, UserResponse, TenantAccessRequest
+from app.schemas import MessageResponse
 from app.models.user import User, UserRole
 from app.models.tenant import Tenant
 
@@ -258,7 +259,7 @@ async def get_me(
     return build_user_response(current_user)
 
 
-@router.post("/logout")
+@router.post("/logout", response_model=MessageResponse)
 async def logout(
     current_user: User = Depends(get_current_active_user)
 ):
@@ -333,7 +334,7 @@ async def approve_user(
     return build_user_response(user, tenant_slug)
 
 
-@router.post("/reject-user/{user_id}")
+@router.post("/reject-user/{user_id}", response_model=MessageResponse)
 async def reject_user(
     user_id: str,
     current_user: User = Depends(get_current_active_user),
@@ -369,7 +370,7 @@ async def reject_user(
     return {"message": "User rejected and removed"}
 
 
-@router.post("/request-access", status_code=status.HTTP_201_CREATED)
+@router.post("/request-access", response_model=MessageResponse, status_code=status.HTTP_201_CREATED)
 async def request_tenant_access(
     request_data: TenantAccessRequest,
     db: AsyncSession = Depends(get_db)

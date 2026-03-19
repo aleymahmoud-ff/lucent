@@ -1,19 +1,29 @@
 """
 Forecast API Endpoints - Run forecasts and retrieve results
 """
+import json
+import uuid
+from datetime import datetime
+
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Optional, List
 
 from app.core.deps import get_db, get_current_user
+from app.db.redis_client import get_redis
 from app.models.user import User
 from app.services.forecast_service import ForecastService
 from app.schemas.forecast import (
     ForecastMethod, ForecastRequest, BatchForecastRequest,
-    ForecastResultResponse, MethodInfoResponse, AutoParamsResponse,
+    ForecastResultResponse, ForecastStatus, MethodInfoResponse, AutoParamsResponse,
     BatchForecastStatusResponse, ForecastPreviewResponse
 )
 from app.config import settings
+from app.core.validators import validate_uuid
+from app.core.rate_limit import RateLimitForecast
+
+REDIS_FORECAST_PREFIX = "forecast:"
+REDIS_FORECAST_TTL = 3600
 
 router = APIRouter()
 
@@ -79,18 +89,15 @@ async def auto_detect_params(
 async def run_forecast(
     request: ForecastRequest,
     current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    _rate_limit: None = Depends(RateLimitForecast),
 ):
     """
     Run a forecast for a single entity.
 
-    Fits the selected model (ARIMA, ETS, or Prophet) to the historical data
-    and generates predictions for the specified horizon.
-
-    Returns:
-        - Predictions with confidence intervals
-        - Model metrics (MAE, RMSE, MAPE)
-        - Model summary and parameters
+    Dispatches the forecast job to a Celery worker and returns immediately
+    with status=PENDING.  The frontend polls GET /forecast/status/{id}
+    to track progress and retrieve the completed result.
     """
     # Validate horizon against tenant limits
     max_horizon = settings.DEFAULT_MAX_FORECAST_HORIZON
@@ -105,15 +112,15 @@ async def run_forecast(
             detail=f"Forecast horizon ({request.horizon}) exceeds maximum allowed ({max_horizon} days)"
         )
 
+    # Run forecast inline (no Celery worker required)
     service = ForecastService(current_user.tenant_id, current_user.id)
-
     try:
         result = await service.run_forecast(request)
         return result
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error running forecast: {str(e)}"
+            detail=f"Forecast failed: {str(e)}"
         )
 
 
@@ -121,13 +128,15 @@ async def run_forecast(
 async def run_batch_forecast(
     request: BatchForecastRequest,
     current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    _rate_limit: None = Depends(RateLimitForecast),
 ):
     """
     Run forecasts for multiple entities.
 
-    Executes forecasts for each entity in the list using the same
-    method and configuration. Returns aggregated results.
+    Dispatches the batch job to a Celery worker and returns immediately
+    with status=PENDING.  Poll GET /forecast/status/{id} per entity
+    to track individual progress.
     """
     # Validate batch size against tenant limits
     max_entities = 50  # Default
@@ -150,15 +159,15 @@ async def run_batch_forecast(
             detail=f"Forecast horizon ({request.horizon}) exceeds maximum allowed ({max_horizon} days)"
         )
 
+    # Start batch forecast in background (returns immediately)
     service = ForecastService(current_user.tenant_id, current_user.id)
-
     try:
-        result = await service.run_batch_forecast(request)
+        result = await service.start_batch_forecast(request)
         return result
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error running batch forecast: {str(e)}"
+            detail=f"Batch forecast failed: {str(e)}"
         )
 
 
@@ -178,6 +187,7 @@ async def get_forecast_status(
     Returns the current status (pending, running, completed, failed)
     and results if the forecast has completed.
     """
+    validate_uuid(forecast_id, "forecast_id")
     service = ForecastService(current_user.tenant_id, current_user.id)
     result = await service.get_forecast_status(forecast_id)
 
@@ -185,6 +195,31 @@ async def get_forecast_status(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Forecast not found or expired. Results are stored for 1 hour."
+        )
+
+    return result
+
+
+@router.get("/batch/{batch_id}", response_model=BatchForecastStatusResponse)
+async def get_batch_forecast_status(
+    batch_id: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Get the status and results of a batch forecast.
+
+    Poll this endpoint after starting a batch forecast to track progress.
+    Returns completed/failed counts and individual entity results as they finish.
+    """
+    validate_uuid(batch_id, "batch_id")
+    service = ForecastService(current_user.tenant_id, current_user.id)
+    result = await service.get_batch_status(batch_id)
+
+    if not result:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Batch forecast not found or expired. Results are stored for 1 hour."
         )
 
     return result

@@ -101,6 +101,9 @@ class ForecastRequest(BaseModel):
     value_column: Optional[str] = None
     entity_column: Optional[str] = None
 
+    # Regressor columns (optional - auto-detected from extra numeric columns if not provided)
+    regressor_columns: Optional[List[str]] = None
+
 
 class BatchForecastRequest(BaseModel):
     """Request to run forecasts for multiple entities"""
@@ -115,6 +118,9 @@ class BatchForecastRequest(BaseModel):
     arima_settings: Optional[ARIMASettingsRequest] = None
     ets_settings: Optional[ETSSettingsRequest] = None
     prophet_settings: Optional[ProphetSettingsRequest] = None
+
+    # Regressor columns
+    regressor_columns: Optional[List[str]] = None
 
 
 class AutoParamsRequest(BaseModel):
@@ -154,6 +160,7 @@ class ModelSummaryResponse(BaseModel):
     parameters: Dict[str, Any]
     coefficients: Optional[Dict[str, float]] = None
     diagnostics: Optional[Dict[str, Any]] = None
+    regressors_used: Optional[List[str]] = None
 
 
 class CrossValidationResultResponse(BaseModel):

@@ -163,7 +163,7 @@ class DatasetService:
         try:
             if file_type == "csv":
                 # Try different encodings
-                for encoding in ["utf-8", "latin-1", "cp1252"]:
+                for encoding in ["utf-8-sig", "utf-8", "windows-1256", "iso-8859-6", "latin-1", "cp1252"]:
                     try:
                         buffer.seek(0)
                         df = pd.read_csv(buffer, encoding=encoding)
@@ -171,7 +171,7 @@ class DatasetService:
                     except UnicodeDecodeError:
                         continue
                 else:
-                    raise ValueError("Could not decode CSV file. Please use UTF-8 encoding.")
+                    raise ValueError("Could not decode CSV file. Supported encodings: UTF-8, Arabic (Windows-1256), Latin-1.")
             elif file_type in ["xlsx", "xls"]:
                 df = pd.read_excel(buffer)
             else:

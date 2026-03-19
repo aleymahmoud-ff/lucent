@@ -169,7 +169,7 @@ export const datasetApi = {
     api.get<Dataset>(`/datasets/${id}`),
 
   preview: (id: string, page: number = 1, pageSize: number = 100) =>
-    api.get<PaginatedResponse<any>>(`/datasets/${id}/preview?page=${page}&pageSize=${pageSize}`),
+    api.get<PaginatedResponse<any>>(`/datasets/${id}/preview?page=${page}&page_size=${pageSize}`),
 
   summary: (id: string) =>
     api.get<DataSummary>(`/datasets/${id}/summary`),
@@ -196,34 +196,31 @@ export const preprocessingApi = {
     api.get<string[]>(`/preprocessing/${datasetId}/entities`),
 
   getEntityStats: (datasetId: string, entityId: string) =>
-    api.get<EntityStats>(`/preprocessing/${datasetId}/${entityId}/stats`),
+    api.get<EntityStats>(`/preprocessing/${datasetId}/entity/${entityId}/stats`),
 
   getEntityData: (datasetId: string, entityId: string) =>
-    api.get<any[]>(`/preprocessing/${datasetId}/${entityId}/data`),
+    api.get<any[]>(`/preprocessing/${datasetId}/entity/${entityId}/data`),
 
   handleMissing: (datasetId: string, entityId: string, config: any) =>
-    api.post(`/preprocessing/${datasetId}/${entityId}/missing`, config),
+    api.post(`/preprocessing/${datasetId}/missing?entity_id=${encodeURIComponent(entityId)}`, config),
 
   handleDuplicates: (datasetId: string, entityId: string, config: any) =>
-    api.post(`/preprocessing/${datasetId}/${entityId}/duplicates`, config),
+    api.post(`/preprocessing/${datasetId}/duplicates?entity_id=${encodeURIComponent(entityId)}`, config),
 
   handleOutliers: (datasetId: string, entityId: string, config: any) =>
-    api.post(`/preprocessing/${datasetId}/${entityId}/outliers`, config),
+    api.post(`/preprocessing/${datasetId}/outliers?entity_id=${encodeURIComponent(entityId)}`, config),
 
   replaceValues: (datasetId: string, entityId: string, config: any) =>
-    api.post(`/preprocessing/${datasetId}/${entityId}/replace`, config),
+    api.post(`/preprocessing/${datasetId}/replace?entity_id=${encodeURIComponent(entityId)}`, config),
 
   aggregate: (datasetId: string, entityId: string, config: any) =>
-    api.post(`/preprocessing/${datasetId}/${entityId}/aggregate`, config),
-
-  apply: (datasetId: string, entityId: string) =>
-    api.post(`/preprocessing/${datasetId}/${entityId}/apply`),
+    api.post(`/preprocessing/${datasetId}/aggregate?entity_id=${encodeURIComponent(entityId)}`, config),
 
   reset: (datasetId: string, entityId: string) =>
-    api.post(`/preprocessing/${datasetId}/${entityId}/reset`),
+    api.post(`/preprocessing/${datasetId}/reset?entity_id=${encodeURIComponent(entityId)}`),
 
   download: (datasetId: string, entityId: string) =>
-    api.download(`/preprocessing/${datasetId}/${entityId}/download`, `processed-${entityId}.csv`),
+    api.download(`/preprocessing/${datasetId}/download?entity_id=${encodeURIComponent(entityId)}`, `processed-${entityId}.csv`),
 
   saveConfig: (datasetId: string, config: PreprocessConfig, name: string) =>
     api.post(`/preprocessing/${datasetId}/configs`, { config, name }),
@@ -237,6 +234,25 @@ export const preprocessingApi = {
 // ============================================
 
 export const forecastApi = {
+  getMethods: () =>
+    api.get('/forecast/methods'),
+
+  runForecast: (data: any) =>
+    api.post('/forecast/run', data),
+
+  runBatchForecast: (data: any) =>
+    api.post('/forecast/batch', data),
+
+  previewForecast: (data: any) =>
+    api.post('/forecast/preview', data),
+
+  getForecastStatus: (id: string) =>
+    api.get(`/forecast/status/${id}`),
+
+  autoDetectParams: (method: string, datasetId: string, entityId: string) =>
+    api.post(`/forecast/auto-params/${method}?dataset_id=${datasetId}&entity_id=${entityId}`),
+
+  // Legacy aliases (kept for backward compat)
   run: (config: ForecastConfig & { datasetId: string; entityId: string }) =>
     api.post<ForecastResult>('/forecast/run', config),
 
@@ -249,11 +265,8 @@ export const forecastApi = {
   preview: (config: ForecastConfig & { datasetId: string; entityId: string }) =>
     api.post<any>('/forecast/preview', config),
 
-  getMethods: () =>
-    api.get<string[]>('/forecast/methods'),
-
   autoParams: (method: string, datasetId: string, entityId: string) =>
-    api.post<any>(`/forecast/auto-params/${method}`, { datasetId, entityId }),
+    api.post<any>(`/forecast/auto-params/${method}?dataset_id=${datasetId}&entity_id=${entityId}`),
 };
 
 // ============================================
@@ -261,11 +274,11 @@ export const forecastApi = {
 // ============================================
 
 export const resultsApi = {
-  get: (forecastId: string) =>
+  getResult: (forecastId: string) =>
     api.get<ForecastResult>(`/results/${forecastId}`),
 
-  getData: (forecastId: string, page: number = 1, pageSize: number = 100) =>
-    api.get<PaginatedResponse<any>>(`/results/${forecastId}/data?page=${page}&pageSize=${pageSize}`),
+  getData: (forecastId: string, page: number = 1, pageSize: number = 50) =>
+    api.get<PaginatedResponse<any>>(`/results/${forecastId}/data?page=${page}&page_size=${pageSize}`),
 
   getMetrics: (forecastId: string) =>
     api.get<any>(`/results/${forecastId}/metrics`),
@@ -273,11 +286,18 @@ export const resultsApi = {
   getSummary: (forecastId: string) =>
     api.get<any>(`/results/${forecastId}/summary`),
 
-  getCrossValidation: (forecastId: string) =>
+  getCVResults: (forecastId: string) =>
     api.get<any>(`/results/${forecastId}/cv`),
 
-  getByEntity: (datasetId: string, entityId: string) =>
-    api.get<ForecastResult[]>(`/results/entity/${datasetId}/${entityId}`),
+  downloadCSV: (forecastId: string) =>
+    `/results/download/${forecastId}`,
+
+  exportReport: (forecastId: string) =>
+    api.post<any>(`/results/export/${forecastId}`),
+
+  // Legacy aliases
+  get: (forecastId: string) =>
+    api.get<ForecastResult>(`/results/${forecastId}`),
 
   download: (forecastId: string, format: 'csv' | 'excel') =>
     api.download(`/results/download/${forecastId}?format=${format}`, `forecast-results.${format}`),
@@ -303,17 +323,11 @@ export const diagnosticsApi = {
   getSeasonality: (forecastId: string) =>
     api.get<any>(`/diagnostics/${forecastId}/seasonality`),
 
-  getEvaluation: (forecastId: string) =>
-    api.get<any>(`/diagnostics/${forecastId}/evaluation`),
-
   getQuality: (forecastId: string) =>
     api.get<any>(`/diagnostics/${forecastId}/quality`),
 
   compare: (forecastIds: string[]) =>
-    api.post<any>('/diagnostics/compare', { forecastIds }),
-
-  export: (forecastId: string, format: 'pdf' | 'html' | 'docx') =>
-    api.post(`/diagnostics/export/${forecastId}`, { format }),
+    api.post<any>('/diagnostics/compare', { forecast_ids: forecastIds }),
 };
 
 // ============================================
@@ -367,8 +381,14 @@ export const connectorApi = {
   test: (id: string) =>
     api.post<{ success: boolean; message: string }>(`/connectors/${id}/test`),
 
-  fetch: (id: string, query?: string) =>
-    api.post<Dataset>(`/connectors/${id}/fetch`, { query }),
+  fetch: (id: string, params?: { query?: string; table?: string; filters?: Record<string, any>; limit?: number }) =>
+    api.post<{ columns: string[]; rows: Record<string, any>[]; row_count: number }>(`/connectors/${id}/fetch`, params),
+
+  getResources: (id: string) =>
+    api.get<{ resources: string[] }>(`/connectors/${id}/resources`),
+
+  getColumns: (id: string) =>
+    api.get<{ columns: string[] }>(`/connectors/${id}/columns`),
 };
 
 // ============================================
@@ -395,7 +415,7 @@ export const tenantApi = {
 
 export const auditApi = {
   list: (page: number = 1, pageSize: number = 50) =>
-    api.get<PaginatedResponse<any>>(`/audit?page=${page}&pageSize=${pageSize}`),
+    api.get<PaginatedResponse<any>>(`/audit?page=${page}&page_size=${pageSize}`),
 };
 
 // ============================================

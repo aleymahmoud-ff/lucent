@@ -12,7 +12,7 @@ import {
 import { Loader2, Users } from "lucide-react";
 import { api } from "@/lib/api/client";
 
-interface Entity {
+export interface Entity {
   name: string;
   row_count: number;
   date_range?: { start: string; end: string };
@@ -20,16 +20,20 @@ interface Entity {
   missing_count: number;
 }
 
+export const ALL_ENTITIES_VALUE = "__ALL__";
+
 interface EntitySelectorProps {
   datasetId: string;
   selectedEntity: string | null;
   onEntityChange: (entityId: string | null) => void;
+  onEntitiesLoaded?: (entities: Entity[]) => void;
 }
 
 export function EntitySelector({
   datasetId,
   selectedEntity,
   onEntityChange,
+  onEntitiesLoaded,
 }: EntitySelectorProps) {
   const [entities, setEntities] = useState<Entity[]>([]);
   const [loading, setLoading] = useState(true);
@@ -49,6 +53,7 @@ export function EntitySelector({
       );
       setEntities(response.entities || []);
       setError(null);
+      onEntitiesLoaded?.(response.entities || []);
 
       // Auto-select first entity if only one
       if (response.entities?.length === 1) {
@@ -61,7 +66,11 @@ export function EntitySelector({
     }
   };
 
-  const selectedEntityData = entities.find((e) => e.name === selectedEntity);
+  const selectedEntityData = selectedEntity !== ALL_ENTITIES_VALUE
+    ? entities.find((e) => e.name === selectedEntity)
+    : null;
+
+  const totalObservations = entities.reduce((sum, e) => sum + e.row_count, 0);
 
   return (
     <Card>
@@ -70,7 +79,7 @@ export function EntitySelector({
           <Users className="h-4 w-4" />
           Entity
         </CardTitle>
-        <CardDescription>Select an entity to forecast</CardDescription>
+        <CardDescription>Select an entity or forecast all</CardDescription>
       </CardHeader>
       <CardContent>
         {loading ? (
@@ -93,19 +102,42 @@ export function EntitySelector({
               <SelectValue placeholder="Select an entity" />
             </SelectTrigger>
             <SelectContent>
+              {entities.length > 1 && (
+                <SelectItem value={ALL_ENTITIES_VALUE}>
+                  <div className="flex flex-col">
+                    <span className="font-medium">All Entities</span>
+                    <span className="text-xs text-muted-foreground">
+                      {entities.length} entities &bull; {totalObservations.toLocaleString()} total observations
+                    </span>
+                  </div>
+                </SelectItem>
+              )}
               {entities.map((entity) => (
                 <SelectItem key={entity.name} value={entity.name}>
                   <div className="flex flex-col">
                     <span>{entity.name}</span>
                     <span className="text-xs text-muted-foreground">
                       {entity.row_count.toLocaleString()} observations
-                      {entity.has_missing && ` • ${entity.missing_count} missing`}
+                      {entity.has_missing && ` \u2022 ${entity.missing_count} missing`}
                     </span>
                   </div>
                 </SelectItem>
               ))}
             </SelectContent>
           </Select>
+        )}
+
+        {selectedEntity === ALL_ENTITIES_VALUE && (
+          <div className="mt-3 p-2 bg-muted rounded text-xs space-y-1">
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Entities:</span>
+              <span className="font-medium">{entities.length}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Total Observations:</span>
+              <span className="font-medium">{totalObservations.toLocaleString()}</span>
+            </div>
+          </div>
         )}
 
         {selectedEntityData && (

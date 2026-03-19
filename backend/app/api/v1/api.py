@@ -3,7 +3,7 @@ API v1 Router - Aggregates all endpoint routers
 """
 from fastapi import APIRouter
 
-from app.api.v1.endpoints import auth, admin, users, groups, connectors, tenants, platform_auth, datasets, preprocessing, forecast
+from app.api.v1.endpoints import auth, admin, users, groups, connectors, tenants, platform_auth, datasets, preprocessing, forecast, results, diagnostics
 
 api_router = APIRouter()
 
@@ -32,3 +32,9 @@ api_router.include_router(preprocessing.router, prefix="/preprocessing", tags=["
 
 # Forecasting Module Endpoints (Phase 5)
 api_router.include_router(forecast.router, prefix="/forecast", tags=["Forecast"])
+
+# Results Module Endpoints (Phase 6)
+api_router.include_router(results.router, prefix="/results", tags=["Results"])
+
+# Diagnostics Module Endpoints (Phase 7)
+api_router.include_router(diagnostics.router, prefix="/diagnostics", tags=["Diagnostics"])

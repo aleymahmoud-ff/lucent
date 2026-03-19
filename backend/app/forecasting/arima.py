@@ -251,6 +251,6 @@ class ARIMAForecaster(BaseForecaster):
         """Check if series is stationary using ADF test"""
         try:
             result = adfuller(y.dropna(), autolag='AIC')
-            return result[1] < 0.05  # p-value < 0.05 means stationary
+            return bool(result[1] < 0.05)  # p-value < 0.05 means stationary
         except Exception:
             return False

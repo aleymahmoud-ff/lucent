@@ -18,7 +18,9 @@ from app.schemas.datasets import (
     SampleDataRequest, SampleDataResponse, ColumnMappingRequest,
     ColumnMappingResponse, TemplateInfo
 )
+from app.schemas import MessageResponse
 from app.config import settings
+from app.core.validators import validate_uuid
 
 logger = logging.getLogger(__name__)
 
@@ -173,6 +175,7 @@ async def get_dataset(
     current_user: User = Depends(get_current_user)
 ):
     """Get a specific dataset by ID"""
+    validate_uuid(dataset_id, "dataset_id")
     service = DatasetService(db, current_user.tenant_id, current_user.id)
     dataset = await service.get_dataset(dataset_id)
 
@@ -185,13 +188,14 @@ async def get_dataset(
     return DatasetResponse.model_validate(dataset)
 
 
-@router.delete("/{dataset_id}")
+@router.delete("/{dataset_id}", response_model=MessageResponse)
 async def delete_dataset(
     dataset_id: str,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     """Delete a dataset"""
+    validate_uuid(dataset_id, "dataset_id")
     service = DatasetService(db, current_user.tenant_id, current_user.id)
     success = await service.delete_dataset(dataset_id)
 
@@ -217,6 +221,7 @@ async def get_dataset_preview(
     current_user: User = Depends(get_current_user)
 ):
     """Get paginated data preview"""
+    validate_uuid(dataset_id, "dataset_id")
     service = DatasetService(db, current_user.tenant_id, current_user.id)
 
     try:
@@ -240,6 +245,7 @@ async def get_dataset_summary(
     current_user: User = Depends(get_current_user)
 ):
     """Get detailed summary statistics for a dataset"""
+    validate_uuid(dataset_id, "dataset_id")
     service = DatasetService(db, current_user.tenant_id, current_user.id)
 
     try:
@@ -259,6 +265,7 @@ async def get_dataset_structure(
     current_user: User = Depends(get_current_user)
 ):
     """Get data structure analysis with column info"""
+    validate_uuid(dataset_id, "dataset_id")
     service = DatasetService(db, current_user.tenant_id, current_user.id)
 
     try:
@@ -278,6 +285,7 @@ async def get_missing_values(
     current_user: User = Depends(get_current_user)
 ):
     """Get missing values analysis"""
+    validate_uuid(dataset_id, "dataset_id")
     service = DatasetService(db, current_user.tenant_id, current_user.id)
 
     try:
@@ -302,6 +310,7 @@ async def update_column_mapping(
     current_user: User = Depends(get_current_user)
 ):
     """Update column mapping for a dataset"""
+    validate_uuid(dataset_id, "dataset_id")
     service = DatasetService(db, current_user.tenant_id, current_user.id)
 
     try:
@@ -340,21 +349,27 @@ async def get_templates():
     templates = [
         TemplateInfo(
             name="Standard Forecast Template",
-            description="Required format: Date, Entity_ID, Entity_Name, Volume",
+            description="90 days of sample data for 2 products (180 rows). Ready to forecast.",
             columns=["Date", "Entity_ID", "Entity_Name", "Volume"],
-            sample_rows=4
+            sample_rows=180
+        ),
+        TemplateInfo(
+            name="Extended Template (with Regressors)",
+            description="90 days with Marketing, Weather & Event columns for Prophet regressors (180 rows)",
+            columns=["Date", "Entity_ID", "Entity_Name", "Volume", "Marketing_Spend", "Temperature", "Local_Match", "National_Match", "International_Match"],
+            sample_rows=180
+        ),
+        TemplateInfo(
+            name="Multi-Entity Template",
+            description="90 days of sample data for 3 products (270 rows). Ready for batch forecast.",
+            columns=["Date", "Entity_ID", "Entity_Name", "Volume"],
+            sample_rows=270
         ),
         TemplateInfo(
             name="Sales Forecast Template",
-            description="Sales data with required columns",
+            description="90 days of sales data for 2 products (180 rows)",
             columns=["Date", "Entity_ID", "Entity_Name", "Volume"],
-            sample_rows=4
-        ),
-        TemplateInfo(
-            name="Energy Forecast Template",
-            description="Energy consumption data with required columns",
-            columns=["Date", "Entity_ID", "Entity_Name", "Volume"],
-            sample_rows=4
+            sample_rows=180
         ),
     ]
     return templates
@@ -362,66 +377,94 @@ async def get_templates():
 
 @router.get("/templates/download")
 async def download_template(
-    template_type: str = Query("basic", description="Template type: basic, multi_entity, sales")
+    template_type: str = Query("basic", description="Template type: basic, extended, multi_entity, sales")
 ):
     """Download a CSV template file.
 
-    All templates use the required column format: Date, Entity_ID, Entity_Name, Volume
+    All templates use the required column format: Date, Entity_ID, Entity_Name, Volume.
+    Templates include 60+ rows per entity so they can be used directly for forecasting.
+    The 'extended' template adds optional columns for Prophet regressors.
     """
-    # All templates use the required columns: Date, Entity_ID, Entity_Name, Volume
-    templates = {
-        "basic": {
-            "filename": "lucent_forecast_template.csv",
-            "columns": ["Date", "Entity_ID", "Entity_Name", "Volume"],
-            "data": [
-                ["2024-01-01", "PRD-001", "Product A", 100],
-                ["2024-01-01", "PRD-002", "Product B", 150],
-                ["2024-01-02", "PRD-001", "Product A", 105],
-                ["2024-01-02", "PRD-002", "Product B", 145],
-                ["2024-01-03", "PRD-001", "Product A", 98],
-                ["2024-01-03", "PRD-002", "Product B", 160],
-            ]
-        },
-        "multi_entity": {
-            "filename": "lucent_multi_entity_template.csv",
-            "columns": ["Date", "Entity_ID", "Entity_Name", "Volume"],
-            "data": [
-                ["2024-01-01", "SKU-001", "Widget A", 100],
-                ["2024-01-01", "SKU-002", "Widget B", 150],
-                ["2024-01-01", "SKU-003", "Gadget X", 200],
-                ["2024-01-02", "SKU-001", "Widget A", 105],
-                ["2024-01-02", "SKU-002", "Widget B", 145],
-                ["2024-01-02", "SKU-003", "Gadget X", 210],
-            ]
-        },
-        "sales": {
-            "filename": "lucent_sales_template.csv",
-            "columns": ["Date", "Entity_ID", "Entity_Name", "Volume"],
-            "data": [
-                ["2024-01-01", "WGT-A", "Widget A", 1000],
-                ["2024-01-01", "WGT-B", "Widget B", 1500],
-                ["2024-01-02", "WGT-A", "Widget A", 1050],
-                ["2024-01-02", "WGT-B", "Widget B", 1480],
-                ["2024-01-03", "WGT-A", "Widget A", 980],
-                ["2024-01-03", "WGT-B", "Widget B", 1520],
-            ]
-        }
+    from datetime import date, timedelta
+    import random
+
+    random.seed(42)  # Reproducible sample data
+
+    # Generate 90 days of dates
+    base_date = date(2024, 1, 1)
+    dates = [(base_date + timedelta(days=i)).isoformat() for i in range(90)]
+
+    import math
+
+    def _gen_volume(base: int, day: int) -> int:
+        """Generate a realistic volume with weekly seasonality and trend."""
+        trend = int(day * 0.3)
+        weekday = (base_date + timedelta(days=day)).weekday()
+        seasonal = int(base * 0.1 * (1 if weekday < 5 else -0.4))
+        noise = random.randint(-int(base * 0.05), int(base * 0.05))
+        return max(10, base + trend + seasonal + noise)
+
+    def _gen_marketing(base: int) -> int:
+        """Generate marketing spend (500-2000)."""
+        return random.randint(max(base - 500, 300), base + 500)
+
+    def _gen_temperature(day: int) -> float:
+        """Generate temperature with seasonal pattern (like the old R app)."""
+        return round(20 + 10 * math.sin(2 * math.pi * day / 365.25) + random.gauss(0, 3), 1)
+
+    def _gen_binary(prob: float) -> int:
+        """Generate binary 0/1 with given probability of 1."""
+        return 1 if random.random() < prob else 0
+
+    # Build template data
+    entities = {
+        "basic": [("PRD-001", "Product A", 100), ("PRD-002", "Product B", 150)],
+        "extended": [("PRD-001", "Product A", 100), ("PRD-002", "Product B", 150)],
+        "multi_entity": [("SKU-001", "Widget A", 100), ("SKU-002", "Widget B", 150), ("SKU-003", "Gadget X", 200)],
+        "sales": [("WGT-A", "Widget A", 1000), ("WGT-B", "Widget B", 1500)],
     }
 
-    template = templates.get(template_type, templates["basic"])
+    filenames = {
+        "basic": "lucent_forecast_template.csv",
+        "extended": "lucent_extended_template.csv",
+        "multi_entity": "lucent_multi_entity_template.csv",
+        "sales": "lucent_sales_template.csv",
+    }
 
-    # Create CSV in memory
+    if template_type not in entities:
+        template_type = "basic"
+
+    is_extended = template_type == "extended"
+    columns = ["Date", "Entity_ID", "Entity_Name", "Volume"]
+    if is_extended:
+        columns += ["Marketing_Spend", "Temperature", "Local_Match", "National_Match", "International_Match"]
+
+    # Marketing spend base per entity (for extended template)
+    marketing_bases = {"PRD-001": 1500, "PRD-002": 1000}
+
+    rows = []
+    for day_i, dt in enumerate(dates):
+        for eid, ename, base_vol in entities[template_type]:
+            row = [dt, eid, ename, _gen_volume(base_vol, day_i)]
+            if is_extended:
+                row.append(_gen_marketing(marketing_bases.get(eid, 1200)))
+                row.append(_gen_temperature(day_i))
+                row.append(_gen_binary(0.10))   # Local_Match ~10%
+                row.append(_gen_binary(0.05))   # National_Match ~5%
+                row.append(_gen_binary(0.02))   # International_Match ~2%
+            rows.append(row)
+
+    # Create CSV in memory with BOM for Excel Arabic support
     output = StringIO()
     writer = csv.writer(output)
-    writer.writerow(template["columns"])
-    writer.writerows(template["data"])
+    writer.writerow(columns)
+    writer.writerows(rows)
 
-    # Return as downloadable file
-    content = output.getvalue().encode("utf-8")
+    content = output.getvalue().encode("utf-8-sig")
     return StreamingResponse(
         BytesIO(content),
         media_type="text/csv",
         headers={
-            "Content-Disposition": f"attachment; filename={template['filename']}"
+            "Content-Disposition": f"attachment; filename={filenames[template_type]}"
         }
     )

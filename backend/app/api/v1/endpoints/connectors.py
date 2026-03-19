@@ -16,8 +16,18 @@ from app.schemas.connectors import (
     ConnectorBasicResponse,
     ConnectorListResponse,
     ConnectorColumnsResponse,
+    ConnectorTestResponse,
+    ConnectorFetchRequest,
+    ConnectorFetchResponse,
+    ConnectorResourcesResponse,
 )
-from app.services.connector_service import get_connector_columns_from_db
+from app.services.connector_service import (
+    get_connector_columns_from_db,
+    test_connector_connection,
+    fetch_connector_data,
+    list_connector_resources,
+)
+from app.core.validators import validate_uuid
 
 router = APIRouter()
 
@@ -31,8 +41,8 @@ async def list_connectors(
     current_user: User = Depends(get_current_tenant_admin),
     db: AsyncSession = Depends(get_db),
     skip: int = Query(0, ge=0),
-    limit: int = Query(50, ge=1, le=100),
-    search: Optional[str] = None,
+    limit: int = Query(50, ge=1, le=200),
+    search: Optional[str] = Query(None, max_length=200),
     is_active: Optional[bool] = None
 ):
     """List all connectors in the current tenant with RLS config (Tenant Admin only)"""
@@ -99,6 +109,7 @@ async def get_connector(
     db: AsyncSession = Depends(get_db)
 ):
     """Get a specific connector with RLS config (Tenant Admin only)"""
+    validate_uuid(connector_id, "connector_id")
     tenant_id = current_user.tenant_id
 
     result = await db.execute(
@@ -146,6 +157,7 @@ async def get_connector_rls(
     db: AsyncSession = Depends(get_db)
 ):
     """Get RLS configuration for a connector (Tenant Admin only)"""
+    validate_uuid(connector_id, "connector_id")
     tenant_id = current_user.tenant_id
 
     # Verify connector exists and belongs to tenant
@@ -187,6 +199,7 @@ async def create_connector_rls(
     db: AsyncSession = Depends(get_db)
 ):
     """Create RLS configuration for a connector (Tenant Admin only)"""
+    validate_uuid(connector_id, "connector_id")
     tenant_id = current_user.tenant_id
 
     # Verify connector exists and belongs to tenant
@@ -238,6 +251,7 @@ async def update_connector_rls(
     db: AsyncSession = Depends(get_db)
 ):
     """Update RLS configuration for a connector (Tenant Admin only)"""
+    validate_uuid(connector_id, "connector_id")
     tenant_id = current_user.tenant_id
 
     # Verify connector exists and belongs to tenant
@@ -286,6 +300,7 @@ async def delete_connector_rls(
     db: AsyncSession = Depends(get_db)
 ):
     """Delete RLS configuration for a connector (Tenant Admin only)"""
+    validate_uuid(connector_id, "connector_id")
     tenant_id = current_user.tenant_id
 
     # Verify connector exists and belongs to tenant
@@ -320,6 +335,7 @@ async def toggle_connector_rls(
     db: AsyncSession = Depends(get_db)
 ):
     """Toggle RLS enabled/disabled for a connector (Tenant Admin only)"""
+    validate_uuid(connector_id, "connector_id")
     tenant_id = current_user.tenant_id
 
     # Verify connector exists and belongs to tenant
@@ -369,6 +385,7 @@ async def get_connector_columns(
     db: AsyncSession = Depends(get_db)
 ):
     """Get column names from a connector's data source (Tenant Admin only)"""
+    validate_uuid(connector_id, "connector_id")
     tenant_id = current_user.tenant_id
 
     # Verify connector exists and belongs to tenant
@@ -389,3 +406,173 @@ async def get_connector_columns(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Failed to get columns: {str(e)}"
         )
+
+
+# ============================================
+# Connection Test
+# ============================================
+
+@router.post("/{connector_id}/test", response_model=ConnectorTestResponse)
+async def test_connector(
+    connector_id: str,
+    current_user: User = Depends(get_current_tenant_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Test connectivity to a connector's data source (Tenant Admin only).
+
+    Returns whether the connection succeeded and a human-readable message.
+    Credentials are never included in the response.
+    """
+    validate_uuid(connector_id, "connector_id")
+    tenant_id = current_user.tenant_id
+
+    connector = await db.scalar(
+        select(Connector).where(
+            Connector.id == connector_id,
+            Connector.tenant_id == tenant_id,
+        )
+    )
+    if not connector:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Connector not found",
+        )
+
+    if not connector.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Connector is inactive",
+        )
+
+    success, message = await test_connector_connection(connector)
+
+    # Persist result
+    from datetime import datetime
+    connector.last_tested_at = datetime.utcnow()
+    connector.last_test_status = "success" if success else "failed"
+    await db.commit()
+
+    return ConnectorTestResponse(success=success, message=message)
+
+
+# ============================================
+# Data Fetch (Preview)
+# ============================================
+
+@router.post("/{connector_id}/fetch", response_model=ConnectorFetchResponse)
+async def fetch_data_from_connector(
+    connector_id: str,
+    fetch_request: ConnectorFetchRequest,
+    current_user: User = Depends(get_current_tenant_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Fetch a preview of data from a connector (Tenant Admin only).
+
+    For database connectors supply 'query' (SQL) or 'table'.
+    For cloud storage connectors supply 'table' or 'query' as the file key/path.
+    Returns up to `limit` rows as a JSON-serialisable structure.
+    """
+    validate_uuid(connector_id, "connector_id")
+    tenant_id = current_user.tenant_id
+
+    connector = await db.scalar(
+        select(Connector).where(
+            Connector.id == connector_id,
+            Connector.tenant_id == tenant_id,
+        )
+    )
+    if not connector:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Connector not found",
+        )
+
+    if not connector.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Connector is inactive",
+        )
+
+    try:
+        df = await fetch_connector_data(
+            connector,
+            query=fetch_request.query,
+            table=fetch_request.table,
+            filters=fetch_request.filters,
+            limit=fetch_request.limit,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Data fetch failed: {type(exc).__name__}",
+        )
+
+    # Convert DataFrame to JSON-safe structure
+    # Replace NaN/NaT with None so FastAPI can serialise it
+    df = df.where(df.notna(), other=None)
+    columns = list(df.columns)
+    rows = df.to_dict(orient="records")
+
+    return ConnectorFetchResponse(
+        columns=columns,
+        rows=rows,
+        row_count=len(rows),
+    )
+
+
+# ============================================
+# Resource Discovery (Tables / Files)
+# ============================================
+
+@router.get("/{connector_id}/resources", response_model=ConnectorResourcesResponse)
+async def get_connector_resources(
+    connector_id: str,
+    current_user: User = Depends(get_current_tenant_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    List available tables (database connectors) or data files
+    (cloud storage connectors) for this connector (Tenant Admin only).
+    """
+    validate_uuid(connector_id, "connector_id")
+    tenant_id = current_user.tenant_id
+
+    connector = await db.scalar(
+        select(Connector).where(
+            Connector.id == connector_id,
+            Connector.tenant_id == tenant_id,
+        )
+    )
+    if not connector:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Connector not found",
+        )
+
+    if not connector.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Connector is inactive",
+        )
+
+    try:
+        resources = await list_connector_resources(connector)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Resource discovery failed: {type(exc).__name__}",
+        )
+
+    return ConnectorResourcesResponse(resources=resources)
