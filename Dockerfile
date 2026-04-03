@@ -1,4 +1,4 @@
-FROM python:3.11-slim
+FROM python:3.11-slim-bookworm
 
 # System dependencies for ODBC Driver 17 (SQL Server connector)
 RUN apt-get update && apt-get install -y --no-install-recommends \
