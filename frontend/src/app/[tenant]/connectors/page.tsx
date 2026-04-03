@@ -172,9 +172,12 @@ function ConnectorsPageContent() {
         </div>
       </div>
       {/* Wizard dialog */}
-      {wizardConnectorId && (
+      {wizardConnectorId && selectedConnector && (
         <ConnectorWizard
           connectorId={wizardConnectorId}
+          connectorName={selectedConnector.name}
+          tenantSlug=""
+          open={true}
           onComplete={() => {
             setWizardConnectorId(null);
             toast.success("Data source configured successfully");
