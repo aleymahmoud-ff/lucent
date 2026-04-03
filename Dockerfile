@@ -11,9 +11,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && ACCEPT_EULA=Y apt-get install -y --no-install-recommends msodbcsql17 \
     && rm -rf /var/lib/apt/lists/*
 
-# CmdStan for Prophet forecasting
-RUN pip install --no-cache-dir cmdstanpy \
-    && python -m cmdstanpy.install_cmdstan --cores 2
+# Build tools for CmdStan (make + g++) — removed after install to keep image small
+RUN apt-get update && apt-get install -y --no-install-recommends make g++ \
+    && pip install --no-cache-dir cmdstanpy \
+    && python -m cmdstanpy.install_cmdstan --cores 2 \
+    && apt-get purge -y make g++ && apt-get autoremove -y \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
