@@ -9,8 +9,11 @@ import json
 import uuid
 import logging
 
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.db.redis_client import get_redis
 from app.services.preprocessing_service import PreprocessingService
+from app.services.snapshot_service import SnapshotService
 from app.schemas.forecast import (
     ForecastMethod, ForecastStatus, ForecastFrequency,
     ForecastRequest, BatchForecastRequest,
@@ -33,9 +36,10 @@ _background_tasks: set = set()
 class ForecastService:
     """Service for running forecasts and managing results"""
 
-    def __init__(self, tenant_id: str, user_id: Optional[str] = None):
+    def __init__(self, tenant_id: str, user_id: Optional[str] = None, db: Optional[AsyncSession] = None):
         self.tenant_id = tenant_id
         self.user_id = user_id
+        self.db = db
         self.preprocessing_service = PreprocessingService(tenant_id, user_id)
 
     # ============================================
@@ -163,6 +167,7 @@ class ForecastService:
         self,
         request: ForecastRequest,
         forecast_id: Optional[str] = None,
+        forecast_history_id: Optional[str] = None,
     ) -> ForecastResultResponse:
         """Run a single forecast"""
         forecast_id = forecast_id or str(uuid.uuid4())
@@ -257,6 +262,13 @@ class ForecastService:
             result.status = ForecastStatus.COMPLETED
             result.progress = 100
             result.completed_at = datetime.utcnow()
+
+            # Save predictions permanently to PostgreSQL (non-blocking)
+            try:
+                if self.db is not None and forecast_history_id:
+                    await self._save_predictions_to_db(forecast_history_id, result)
+            except Exception as db_err:
+                logger.error(f"Failed to save predictions to DB (non-blocking): {db_err}")
 
         except Exception as e:
             logger.error(f"Forecast failed: {e}", exc_info=True)
@@ -513,6 +525,36 @@ class ForecastService:
 
         except Exception as e:
             logger.error(f"Error storing forecast result: {e}")
+
+    async def _save_predictions_to_db(
+        self,
+        forecast_history_id: str,
+        result: ForecastResultResponse,
+    ) -> None:
+        """Persist forecast predictions to PostgreSQL for permanent storage."""
+        from app.models import ForecastPrediction
+
+        prediction = ForecastPrediction(
+            id=str(uuid.uuid4()),
+            tenant_id=self.tenant_id,
+            forecast_history_id=forecast_history_id,
+            entity_id=result.entity_id or "unknown",
+            entity_name=None,
+            predicted_values=[
+                {"date": p.date, "value": p.value, "lower_bound": p.lower_bound, "upper_bound": p.upper_bound}
+                for p in (result.predictions or [])
+            ],
+            metrics=result.metrics.model_dump() if result.metrics else None,
+            model_summary=result.model_summary.model_dump() if result.model_summary else None,
+            cv_results=result.cv_results.model_dump() if result.cv_results else None,
+        )
+        self.db.add(prediction)
+        await self.db.flush()
+        logger.info(
+            "Saved prediction to DB: forecast_history_id=%s entity=%s",
+            forecast_history_id,
+            result.entity_id,
+        )
 
     async def get_forecast_status(self, forecast_id: str) -> Optional[ForecastResultResponse]:
         """Get forecast status/result from Redis"""

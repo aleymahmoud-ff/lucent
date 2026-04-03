@@ -60,6 +60,10 @@ class Settings(BaseSettings):
     DEFAULT_MAX_FORECAST_HORIZON: int = 365
     DEFAULT_RATE_LIMIT_FORECASTS_PER_HOUR: int = 20
 
+    # Data Retention
+    RETENTION_CLEANUP_INTERVAL_HOURS: int = 24   # How often the cleanup runs (informational; actual schedule is crontab in celery_app.py)
+    RETENTION_BATCH_SIZE: int = 100              # Number of expired snapshots processed per batch
+
     # Logging
     LOG_LEVEL: str = "INFO"
     LOG_FILE: str = "./logs/lucent.log"
@@ -68,6 +72,18 @@ class Settings(BaseSettings):
     STACK_PROJECT_ID: Optional[str] = None
     STACK_PUBLISHABLE_CLIENT_KEY: Optional[str] = None
     STACK_SECRET_SERVER_KEY: Optional[str] = None
+
+    # S3 / Object Storage (CranL Storage Bucket)
+    # Endpoint format for CranL: https://storage-{bucket-name}.cranl.net
+    # Set STORAGE_BACKEND=s3 and all four S3_* vars to enable S3 mode.
+    # Leave unset (or STORAGE_BACKEND=local) for local filesystem (development).
+    S3_BUCKET: Optional[str] = None
+    S3_ACCESS_KEY: Optional[str] = None
+    S3_SECRET_KEY: Optional[str] = None
+    S3_ENDPOINT_URL: Optional[str] = None       # e.g. https://storage-lucent-data.cranl.net
+    S3_REGION: str = "us-east-1"
+    STORAGE_BACKEND: str = "local"              # "s3" or "local"
+    LOCAL_STORAGE_PATH: str = "./storage"
 
     @property
     def cors_origins_list(self) -> list[str]:

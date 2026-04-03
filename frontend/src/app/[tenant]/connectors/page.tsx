@@ -3,9 +3,12 @@
 import { Suspense, useState, useCallback } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Loader2, Plug, Database, ArrowRight } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Loader2, Plug, Database, ArrowRight, Wand2 } from "lucide-react";
+import { toast } from "sonner";
 import {
   ConnectorList,
+  ConnectorWizard,
   ResourceBrowser,
   DataPreview,
   type ConnectorCardData,
@@ -101,6 +104,7 @@ function ConnectorDetail({
 function ConnectorsPageContent() {
   const [selectedConnector, setSelectedConnector] = useState<ConnectorCardData | null>(null);
   const [selectedResource, setSelectedResource] = useState<string | null>(null);
+  const [wizardConnectorId, setWizardConnectorId] = useState<string | null>(null);
 
   const handleSelectConnector = useCallback((connector: ConnectorCardData) => {
     setSelectedConnector(connector);
@@ -124,11 +128,22 @@ function ConnectorsPageContent() {
   return (
     <div className="space-y-6">
       {/* Page header */}
-      <div>
-        <h1 className="text-2xl font-bold">Data Connectors</h1>
-        <p className="text-muted-foreground">
-          Connect to external data sources and preview their data
-        </p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold">Data Connectors</h1>
+          <p className="text-muted-foreground">
+            Connect to external data sources and preview their data
+          </p>
+        </div>
+        {selectedConnector && (
+          <Button
+            onClick={() => setWizardConnectorId(selectedConnector.id)}
+            className="gap-2"
+          >
+            <Wand2 className="h-4 w-4" />
+            Setup Data Source
+          </Button>
+        )}
       </div>
 
       {/* Two-panel layout */}
@@ -156,6 +171,17 @@ function ConnectorsPageContent() {
           )}
         </div>
       </div>
+      {/* Wizard dialog */}
+      {wizardConnectorId && (
+        <ConnectorWizard
+          connectorId={wizardConnectorId}
+          onComplete={() => {
+            setWizardConnectorId(null);
+            toast.success("Data source configured successfully");
+          }}
+          onClose={() => setWizardConnectorId(null)}
+        />
+      )}
     </div>
   );
 }

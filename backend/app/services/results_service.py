@@ -8,6 +8,9 @@ import logging
 from datetime import datetime
 from typing import Optional, List, Dict, Any, Tuple
 
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.db.redis_client import get_redis
 from app.schemas.forecast import (
     ForecastResultResponse,
@@ -34,33 +37,108 @@ class ResultsService:
     # Core Retrieval
     # ============================================
 
-    async def get_result(self, forecast_id: str) -> Optional[ForecastResultResponse]:
+    async def get_result(
+        self, forecast_id: str, db: Optional[AsyncSession] = None
+    ) -> Optional[ForecastResultResponse]:
         """
-        Fetch a full forecast result from Redis.
+        Two-tier retrieval: try Redis first (fast), fall back to PostgreSQL (permanent).
 
-        Returns None if the key does not exist (expired or never created).
+        Returns None only when neither store has the result.
         """
+        # --- Tier 1: Redis (hot cache) ---
         try:
             redis = await get_redis()
-            if redis is None:
-                logger.warning("Redis unavailable — cannot retrieve forecast result")
-                return None
-
-            key = f"{REDIS_FORECAST_PREFIX}{forecast_id}"
-            raw = await redis.get(key)
-
-            if raw is None:
-                return None
-
-            if isinstance(raw, bytes):
-                raw = raw.decode("utf-8")
-
-            data = json.loads(raw)
-            return ForecastResultResponse(**data)
-
+            if redis is not None:
+                key = f"{REDIS_FORECAST_PREFIX}{forecast_id}"
+                raw = await redis.get(key)
+                if raw is not None:
+                    if isinstance(raw, bytes):
+                        raw = raw.decode("utf-8")
+                    return ForecastResultResponse(**json.loads(raw))
         except Exception as e:
-            logger.error(f"Error retrieving forecast result {forecast_id}: {e}")
+            logger.error(f"Redis retrieval error for {forecast_id}: {e}")
+
+        # --- Tier 2: PostgreSQL (permanent) ---
+        if db is not None:
+            try:
+                result = await self._get_result_from_db(db, forecast_id)
+                if result is not None:
+                    # Re-populate Redis cache for subsequent fast access
+                    try:
+                        redis = await get_redis()
+                        if redis:
+                            key = f"{REDIS_FORECAST_PREFIX}{forecast_id}"
+                            data = result.model_dump(mode='json')
+                            await redis.set(key, json.dumps(data, default=str), ex=3600)
+                    except Exception:
+                        pass  # Cache repopulation is best-effort
+                    return result
+            except Exception as e:
+                logger.error(f"DB retrieval error for {forecast_id}: {e}")
+
+        return None
+
+    async def _get_result_from_db(
+        self, db: AsyncSession, forecast_id: str
+    ) -> Optional[ForecastResultResponse]:
+        """Reconstruct a ForecastResultResponse from PostgreSQL records."""
+        from app.models import ForecastHistory, ForecastPrediction
+
+        # Load forecast history
+        history = await db.scalar(
+            select(ForecastHistory).where(
+                ForecastHistory.id == forecast_id,
+                ForecastHistory.tenant_id == self.tenant_id,
+            )
+        )
+        if history is None:
             return None
+
+        # Load predictions for this forecast
+        pred_result = await db.execute(
+            select(ForecastPrediction).where(
+                ForecastPrediction.forecast_history_id == forecast_id,
+                ForecastPrediction.tenant_id == self.tenant_id,
+            )
+        )
+        db_predictions = pred_result.scalars().all()
+
+        # Pick the first prediction to reconstruct the response
+        # (single forecast = 1 prediction, batch = multiple)
+        predictions = []
+        metrics = None
+        model_summary = None
+        cv_results = None
+        entity_id = history.entity_id or "unknown"
+
+        if db_predictions:
+            pred = db_predictions[0]
+            entity_id = pred.entity_id
+            predictions = [
+                PredictionResponse(**p)
+                for p in (pred.predicted_values or [])
+            ]
+            if pred.metrics:
+                metrics = MetricsResponse(**pred.metrics)
+            if pred.model_summary:
+                model_summary = ModelSummaryResponse(**pred.model_summary)
+            if pred.cv_results:
+                cv_results = CrossValidationResultResponse(**pred.cv_results)
+
+        return ForecastResultResponse(
+            id=history.id,
+            dataset_id=history.dataset_id,
+            entity_id=entity_id,
+            method=history.method.value if history.method else "arima",
+            status=ForecastStatus(history.status.value) if history.status else ForecastStatus.COMPLETED,
+            progress=100 if history.status and history.status.value == "completed" else 0,
+            predictions=predictions,
+            metrics=metrics,
+            model_summary=model_summary,
+            cv_results=cv_results,
+            created_at=history.created_at,
+            completed_at=history.completed_at,
+        )
 
     # ============================================
     # Paginated Predictions

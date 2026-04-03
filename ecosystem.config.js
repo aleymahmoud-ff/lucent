@@ -1,3 +1,9 @@
+const nodeExe = process.env.LUCENT_NODE || 'node';
+const uvicornExe = process.env.LUCENT_UVICORN || 'uvicorn';
+const extraPath = process.env.LUCENT_EXTRA_PATH
+  ? process.env.LUCENT_EXTRA_PATH + ';' + process.env.PATH
+  : process.env.PATH;
+
 module.exports = {
   apps: [
     {
@@ -5,7 +11,7 @@ module.exports = {
       cwd: './frontend',
       script: 'node_modules/next/dist/bin/next',
       args: 'start',
-      interpreter: 'C:/tools/node-v20.18.3-win-x64/node.exe',
+      interpreter: nodeExe,
       env: {
         PORT: 3840,
         NODE_ENV: 'production',
@@ -16,11 +22,11 @@ module.exports = {
     {
       name: 'lucent-backend',
       cwd: './backend',
-      script: 'C:/tools/python311/Scripts/uvicorn.exe',
+      script: uvicornExe,
       args: 'app.main:app --host 0.0.0.0 --port 8000',
       env: {
         PYTHONPATH: '.',
-        PATH: 'C:/tools/mingw64/bin;C:/Users/Administrator/.cmdstan/cmdstan-2.38.0/stan/lib/stan_math/lib/tbb;' + process.env.PATH,
+        PATH: extraPath,
       },
       watch: false,
       autorestart: true,

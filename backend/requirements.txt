@@ -52,3 +52,4 @@ google-cloud-storage==2.14.0 # Google Cloud Storage
 snowflake-connector-python==3.7.0
 pymysql==1.1.0               # MySQL connector
 aiomysql==0.2.0              # MySQL async
+aioodbc==0.5.0               # SQL Server async (via ODBC Driver 17)

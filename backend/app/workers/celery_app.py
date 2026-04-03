@@ -2,6 +2,7 @@
 Celery Application - Task queue configuration using Redis as broker/backend
 """
 from celery import Celery
+from celery.schedules import crontab
 
 from app.config import settings
 
@@ -32,6 +33,18 @@ celery_app.conf.update(
     # Concurrency — keep low to avoid memory spikes from statsmodels / prophet
     worker_concurrency=2,
 
-    # Auto-discover tasks in the workers package
-    imports=["app.workers.forecast_tasks"],
+    # Auto-discover tasks in the workers and tasks packages
+    imports=[
+        "app.workers.forecast_tasks",
+        "app.tasks.retention",
+    ],
+
+    # Celery Beat schedule
+    beat_schedule={
+        "cleanup-expired-snapshots": {
+            "task": "app.tasks.retention.cleanup_expired_snapshots",
+            # Daily at 03:00 UTC — quiet period with low forecast traffic.
+            "schedule": crontab(hour=3, minute=0),
+        },
+    },
 )

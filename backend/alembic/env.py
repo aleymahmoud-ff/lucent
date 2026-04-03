@@ -23,6 +23,14 @@ from app.models import (
     AuditLog,
     UsageStat,
     ForecastHistory,
+    UserGroup,
+    UserGroupMembership,
+    ConnectorRLS,
+    PlatformAdmin,
+    Dataset,
+    ConnectorDataSource,
+    DataSnapshot,
+    ForecastPrediction,
 )
 
 # this is the Alembic Config object, which provides

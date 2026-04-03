@@ -3,7 +3,7 @@ API v1 Router - Aggregates all endpoint routers
 """
 from fastapi import APIRouter
 
-from app.api.v1.endpoints import auth, admin, users, groups, connectors, tenants, platform_auth, datasets, preprocessing, forecast, results, diagnostics
+from app.api.v1.endpoints import auth, admin, users, groups, connectors, connector_wizard, connector_data, tenants, platform_auth, datasets, preprocessing, forecast, results, diagnostics
 
 api_router = APIRouter()
 
@@ -20,6 +20,8 @@ api_router.include_router(admin.router, prefix="/admin", tags=["Platform Admin M
 api_router.include_router(users.router, prefix="/users", tags=["Users - Tenant Admin"])
 api_router.include_router(groups.router, prefix="/groups", tags=["Groups - Tenant Admin"])
 api_router.include_router(connectors.router, prefix="/connectors", tags=["Connectors - Tenant Admin"])
+api_router.include_router(connector_wizard.router, prefix="/connectors", tags=["Connector Wizard"])
+api_router.include_router(connector_data.router, prefix="/data-sources", tags=["Data Sources - User"])
 
 # Public Endpoints
 api_router.include_router(tenants.router, prefix="/tenants", tags=["Tenants - Public"])

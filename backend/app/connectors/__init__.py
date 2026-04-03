@@ -11,6 +11,7 @@ from .s3_connector import S3Connector
 from .azure_blob_connector import AzureBlobConnector
 from .gcs_connector import GCSConnector
 from .snowflake_connector import SnowflakeConnector
+from .sqlserver_connector import SQLServerConnector
 
 __all__ = [
     "BaseConnector",
@@ -20,6 +21,7 @@ __all__ = [
     "AzureBlobConnector",
     "GCSConnector",
     "SnowflakeConnector",
+    "SQLServerConnector",
     "get_connector",
 ]
 
@@ -31,6 +33,7 @@ _CONNECTOR_REGISTRY: dict[str, type[BaseConnector]] = {
     "azure_blob": AzureBlobConnector,
     "gcs": GCSConnector,
     "snowflake": SnowflakeConnector,
+    "sqlserver": SQLServerConnector,
 }
 
 

@@ -7,7 +7,8 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import StreamingResponse
 
-from app.core.deps import get_current_user
+from app.core.deps import get_current_user, get_db
+from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.user import User
 from app.schemas.forecast import (
     CrossValidationResultResponse,
@@ -34,14 +35,14 @@ def _get_service(current_user: User) -> ResultsService:
 async def _require_result(
     forecast_id: str,
     service: ResultsService,
+    db: Optional[AsyncSession] = None,
 ) -> ForecastResultResponse:
     """
     Fetch a forecast result or raise 404.
-    Also raises 404 when the forecast exists but has not yet completed
-    so that callers always receive a result with actual data.
+    Uses two-tier retrieval: Redis first, PostgreSQL fallback.
     """
     validate_uuid(forecast_id, "forecast_id")
-    result = await service.get_result(forecast_id)
+    result = await service.get_result(forecast_id, db=db)
     if result is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -70,9 +71,10 @@ async def _require_result(
 async def get_forecast_result(
     forecast_id: str,
     current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ):
     service = _get_service(current_user)
-    return await _require_result(forecast_id, service)
+    return await _require_result(forecast_id, service, db=db)
 
 
 # ============================================
@@ -96,9 +98,10 @@ async def get_forecast_data(
     page: int = Query(1, ge=1, description="Page number (1-based)"),
     page_size: int = Query(50, ge=1, le=500, description="Items per page"),
     current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ) -> Dict[str, Any]:
     service = _get_service(current_user)
-    result = await _require_result(forecast_id, service)
+    result = await _require_result(forecast_id, service, db=db)
 
     items, total, total_pages, current_page = service.paginate_predictions(
         result.predictions, page, page_size
@@ -137,9 +140,10 @@ async def get_forecast_data(
 async def get_forecast_metrics(
     forecast_id: str,
     current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ):
     service = _get_service(current_user)
-    result = await _require_result(forecast_id, service)
+    result = await _require_result(forecast_id, service, db=db)
 
     if result.metrics is None:
         raise HTTPException(
@@ -170,9 +174,10 @@ async def get_forecast_metrics(
 async def get_forecast_summary(
     forecast_id: str,
     current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ):
     service = _get_service(current_user)
-    result = await _require_result(forecast_id, service)
+    result = await _require_result(forecast_id, service, db=db)
 
     if result.model_summary is None:
         raise HTTPException(
@@ -203,9 +208,10 @@ async def get_forecast_summary(
 async def get_forecast_cv(
     forecast_id: str,
     current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ):
     service = _get_service(current_user)
-    result = await _require_result(forecast_id, service)
+    result = await _require_result(forecast_id, service, db=db)
 
     if result.cv_results is None:
         raise HTTPException(
@@ -235,9 +241,10 @@ async def get_forecast_cv(
 async def download_forecast_csv(
     forecast_id: str,
     current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ):
     service = _get_service(current_user)
-    result = await _require_result(forecast_id, service)
+    result = await _require_result(forecast_id, service, db=db)
 
     if result.status != ForecastStatus.COMPLETED or not result.predictions:
         raise HTTPException(
@@ -277,9 +284,10 @@ async def download_forecast_csv(
 async def export_forecast_report(
     forecast_id: str,
     current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ) -> Dict[str, Any]:
     service = _get_service(current_user)
-    result = await _require_result(forecast_id, service)
+    result = await _require_result(forecast_id, service, db=db)
 
     if result.status != ForecastStatus.COMPLETED:
         raise HTTPException(

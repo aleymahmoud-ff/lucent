@@ -11,15 +11,15 @@ import pandas as pd
 # Required columns that every data source must provide
 REQUIRED_COLUMNS = {"Date", "Entity_ID", "Entity_Name", "Volume"}
 
-# Regex for valid SQL identifiers (table names, column names, schema names).
-# Allows alphanumeric, underscores, and dots (for schema.table notation).
-_SAFE_IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_.]*$")
+# Regex for valid SQL leaf identifiers (no dots — each segment validated separately).
+_SAFE_IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 
 def validate_sql_identifier(value: str, param_name: str = "identifier") -> str:
     """
-    Validate that *value* is a safe SQL identifier (table name, column name, etc.).
+    Validate that *value* is a safe SQL leaf identifier (table name, column name, etc.).
 
+    Dots are NOT allowed — use validate_qualified_identifier() for schema.table names.
     Rejects values that contain special characters, semicolons, spaces, or
     other patterns that could be used for SQL injection when the identifier
     is interpolated into a query string.
@@ -30,11 +30,32 @@ def validate_sql_identifier(value: str, param_name: str = "identifier") -> str:
     if not _SAFE_IDENTIFIER_RE.match(stripped):
         raise ValueError(
             f"Invalid {param_name}: {stripped!r}. "
-            "Only alphanumeric characters, underscores, and dots are allowed."
+            "Only alphanumeric characters and underscores are allowed."
         )
     if len(stripped) > 255:
         raise ValueError(f"{param_name} exceeds maximum length of 255 characters")
     return stripped
+
+
+def validate_qualified_identifier(value: str, param_name: str = "identifier") -> tuple[str, str]:
+    """
+    Validate a schema-qualified identifier like 'dbo.DailySales'.
+
+    Splits on the first dot, validates each segment independently.
+    Returns (schema, table) tuple. If no dot is present, returns ('dbo', value)
+    as a default schema.
+    """
+    if not value or not value.strip():
+        raise ValueError(f"{param_name} must not be empty")
+    stripped = value.strip()
+    if "." in stripped:
+        parts = stripped.split(".", 1)
+        schema = validate_sql_identifier(parts[0], f"{param_name} schema")
+        table = validate_sql_identifier(parts[1], f"{param_name} table")
+        return schema, table
+    else:
+        table = validate_sql_identifier(stripped, param_name)
+        return "dbo", table
 
 
 class BaseConnector(ABC):

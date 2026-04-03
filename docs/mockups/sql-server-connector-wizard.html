@@ -1,0 +1,1696 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LUCENT — SQL Server Connector Wizard</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  :root {
+    --bg: #0a0a0f;
+    --surface: #111118;
+    --surface-2: #1a1a24;
+    --surface-3: #22222e;
+    --border: #2a2a3a;
+    --border-hover: #3a3a4e;
+    --text: #e4e4ed;
+    --text-muted: #8888a0;
+    --text-dim: #55556a;
+    --primary: #6366f1;
+    --primary-hover: #7577f5;
+    --primary-glow: rgba(99,102,241,0.15);
+    --success: #22c55e;
+    --success-bg: rgba(34,197,94,0.1);
+    --success-border: rgba(34,197,94,0.25);
+    --error: #ef4444;
+    --error-bg: rgba(239,68,68,0.1);
+    --error-border: rgba(239,68,68,0.25);
+    --warning: #f59e0b;
+    --warning-bg: rgba(245,158,11,0.1);
+    --warning-border: rgba(245,158,11,0.25);
+    --info-bg: rgba(99,102,241,0.08);
+    --info-border: rgba(99,102,241,0.2);
+    --radius: 8px;
+    --radius-lg: 12px;
+  }
+
+  body {
+    font-family: 'Inter', -apple-system, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* ── Top Nav ── */
+  .topnav {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 0 24px;
+    height: 56px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    position: sticky;
+    top: 0;
+    z-index: 50;
+  }
+  .topnav-logo {
+    font-weight: 700;
+    font-size: 18px;
+    letter-spacing: 2px;
+    color: var(--primary);
+  }
+  .topnav-right {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    color: var(--text-muted);
+    font-size: 13px;
+  }
+  .topnav-avatar {
+    width: 32px; height: 32px;
+    border-radius: 50%;
+    background: var(--surface-3);
+    border: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 13px; font-weight: 600; color: var(--text-muted);
+  }
+
+  /* ── Layout ── */
+  .page {
+    flex: 1;
+    display: flex;
+    justify-content: center;
+    padding: 40px 24px 60px;
+  }
+  .wizard-container {
+    width: 100%;
+    max-width: 780px;
+  }
+  .wizard-title {
+    font-size: 22px;
+    font-weight: 700;
+    margin-bottom: 8px;
+  }
+  .wizard-subtitle {
+    color: var(--text-muted);
+    font-size: 14px;
+    margin-bottom: 32px;
+  }
+
+  /* ── Stepper ── */
+  .stepper {
+    display: flex;
+    align-items: center;
+    margin-bottom: 36px;
+    gap: 0;
+  }
+  .step-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    position: relative;
+  }
+  .step-item.disabled { pointer-events: none; }
+  .step-circle {
+    width: 32px; height: 32px;
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 13px; font-weight: 600;
+    border: 2px solid var(--border);
+    color: var(--text-dim);
+    background: var(--surface);
+    transition: all .25s;
+    flex-shrink: 0;
+  }
+  .step-item.active .step-circle {
+    border-color: var(--primary);
+    background: var(--primary);
+    color: #fff;
+    box-shadow: 0 0 12px var(--primary-glow);
+  }
+  .step-item.completed .step-circle {
+    border-color: var(--success);
+    background: var(--success);
+    color: #fff;
+  }
+  .step-label {
+    font-size: 13px;
+    color: var(--text-dim);
+    font-weight: 500;
+    white-space: nowrap;
+    transition: color .25s;
+  }
+  .step-item.active .step-label { color: var(--text); }
+  .step-item.completed .step-label { color: var(--success); }
+  .step-line {
+    flex: 1;
+    height: 2px;
+    background: var(--border);
+    margin: 0 8px;
+    min-width: 16px;
+    transition: background .25s;
+  }
+  .step-line.completed { background: var(--success); }
+
+  /* ── Card ── */
+  .wizard-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 32px;
+    min-height: 420px;
+    display: flex;
+    flex-direction: column;
+  }
+  .card-header {
+    font-size: 15px;
+    font-weight: 600;
+    margin-bottom: 4px;
+  }
+  .card-desc {
+    font-size: 13px;
+    color: var(--text-muted);
+    margin-bottom: 24px;
+  }
+  .card-body { flex: 1; }
+
+  /* ── Form ── */
+  .form-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin-bottom: 16px;
+  }
+  .form-row.full { grid-template-columns: 1fr; }
+  .form-group { display: flex; flex-direction: column; gap: 6px; }
+  .form-group label {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-muted);
+  }
+  .form-group label .req { color: var(--primary); }
+  .form-input, .form-select {
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 9px 12px;
+    color: var(--text);
+    font-size: 14px;
+    font-family: inherit;
+    outline: none;
+    transition: border-color .2s, box-shadow .2s;
+    width: 100%;
+  }
+  .form-input:focus, .form-select:focus {
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px var(--primary-glow);
+  }
+  .form-select { cursor: pointer; appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='%238888a0' viewBox='0 0 16 16'%3E%3Cpath d='M8 11L3 6h10z'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 12px center;
+    padding-right: 32px;
+  }
+  .checkbox-row {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 13px; color: var(--text-muted);
+    margin-bottom: 8px;
+  }
+  .checkbox-row input[type="checkbox"] {
+    accent-color: var(--primary);
+    width: 16px; height: 16px;
+  }
+
+  /* ── Buttons ── */
+  .btn {
+    padding: 9px 20px;
+    border-radius: var(--radius);
+    font-size: 14px;
+    font-weight: 500;
+    font-family: inherit;
+    cursor: pointer;
+    border: none;
+    transition: all .2s;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .btn-primary {
+    background: var(--primary);
+    color: #fff;
+  }
+  .btn-primary:hover { background: var(--primary-hover); }
+  .btn-primary:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+  .btn-outline {
+    background: transparent;
+    color: var(--text-muted);
+    border: 1px solid var(--border);
+  }
+  .btn-outline:hover {
+    border-color: var(--border-hover);
+    color: var(--text);
+    background: var(--surface-2);
+  }
+  .btn-success {
+    background: var(--success);
+    color: #fff;
+  }
+  .btn-success:hover { filter: brightness(1.1); }
+  .btn-ghost {
+    background: transparent;
+    color: var(--text-muted);
+    border: none;
+    padding: 9px 14px;
+  }
+  .btn-ghost:hover { color: var(--text); background: var(--surface-2); }
+  .btn-sm { padding: 6px 12px; font-size: 12px; }
+
+  .wizard-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 28px;
+    padding-top: 20px;
+    border-top: 1px solid var(--border);
+  }
+
+  /* ── Alert Boxes ── */
+  .alert {
+    padding: 12px 16px;
+    border-radius: var(--radius);
+    font-size: 13px;
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    margin-top: 16px;
+    line-height: 1.5;
+  }
+  .alert-info {
+    background: var(--info-bg);
+    border: 1px solid var(--info-border);
+    color: var(--text-muted);
+  }
+  .alert-success {
+    background: var(--success-bg);
+    border: 1px solid var(--success-border);
+    color: var(--success);
+  }
+  .alert-error {
+    background: var(--error-bg);
+    border: 1px solid var(--error-border);
+    color: var(--error);
+  }
+  .alert-warning {
+    background: var(--warning-bg);
+    border: 1px solid var(--warning-border);
+    color: var(--warning);
+  }
+  .alert-icon { font-size: 16px; flex-shrink: 0; margin-top: 1px; }
+
+  /* ── Test Connection ── */
+  .test-row {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin-top: 8px;
+  }
+  .test-result {
+    font-size: 13px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .test-result.success { color: var(--success); }
+  .test-result.fail { color: var(--error); }
+  .spinner {
+    width: 18px; height: 18px;
+    border: 2px solid var(--border);
+    border-top-color: var(--primary);
+    border-radius: 50%;
+    animation: spin .7s linear infinite;
+    display: inline-block;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ── Table List (Step 2) ── */
+  .search-box {
+    position: relative;
+    margin-bottom: 16px;
+  }
+  .search-box .search-icon {
+    position: absolute;
+    left: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--text-dim);
+    font-size: 14px;
+  }
+  .search-box input {
+    padding-left: 36px;
+    width: 100%;
+  }
+  .table-list-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+    font-size: 13px;
+    color: var(--text-muted);
+  }
+  .table-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    max-height: 310px;
+    overflow-y: auto;
+    padding-right: 4px;
+  }
+  .table-list::-webkit-scrollbar { width: 4px; }
+  .table-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+  .table-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 16px;
+    border-radius: var(--radius);
+    border: 1px solid var(--border);
+    background: var(--surface-2);
+    cursor: pointer;
+    transition: all .15s;
+  }
+  .table-item:hover {
+    border-color: var(--border-hover);
+    background: var(--surface-3);
+  }
+  .table-item.selected {
+    border-color: var(--primary);
+    background: var(--primary-glow);
+  }
+  .table-item-left {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .table-radio {
+    width: 18px; height: 18px;
+    border-radius: 50%;
+    border: 2px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    transition: border-color .15s;
+  }
+  .table-item.selected .table-radio {
+    border-color: var(--primary);
+  }
+  .table-radio-inner {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--primary);
+    opacity: 0;
+    transition: opacity .15s;
+  }
+  .table-item.selected .table-radio-inner { opacity: 1; }
+  .table-name { font-size: 14px; font-weight: 500; }
+  .table-meta { font-size: 12px; color: var(--text-dim); }
+  .table-cols { font-size: 12px; color: var(--text-dim); margin-top: 1px; }
+
+  /* ── Column Mapping (Step 3) ── */
+  .mapping-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+  .mapping-row {
+    display: grid;
+    grid-template-columns: 160px 24px 1fr;
+    align-items: center;
+    gap: 12px;
+  }
+  .mapping-field {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 14px;
+    font-weight: 500;
+  }
+  .mapping-field .icon {
+    width: 32px; height: 32px;
+    border-radius: var(--radius);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 15px;
+    background: var(--surface-3);
+    flex-shrink: 0;
+  }
+  .mapping-arrow { color: var(--text-dim); font-size: 16px; text-align: center; }
+  .mapping-select-wrap { position: relative; }
+  .mapping-type {
+    font-size: 11px;
+    color: var(--text-dim);
+    margin-top: 4px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .type-badge {
+    font-size: 10px;
+    padding: 1px 6px;
+    border-radius: 4px;
+    font-weight: 500;
+  }
+  .type-badge.ok { background: var(--success-bg); color: var(--success); border: 1px solid var(--success-border); }
+  .type-badge.warn { background: var(--warning-bg); color: var(--warning); border: 1px solid var(--warning-border); }
+  .unmapped-info {
+    margin-top: 20px;
+    padding: 12px 16px;
+    background: var(--surface-2);
+    border-radius: var(--radius);
+    font-size: 12px;
+    color: var(--text-dim);
+  }
+  .unmapped-info strong { color: var(--text-muted); font-weight: 500; }
+
+  /* ── Data Preview Table (Step 4) ── */
+  .preview-meta {
+    display: flex;
+    gap: 24px;
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+  }
+  .preview-meta-item {
+    font-size: 12px;
+    color: var(--text-muted);
+  }
+  .preview-meta-item span { color: var(--text); font-weight: 500; }
+  .data-table-wrap {
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+    margin-bottom: 16px;
+  }
+  .data-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+  .data-table thead { background: var(--surface-2); }
+  .data-table th {
+    padding: 10px 16px;
+    text-align: left;
+    font-weight: 600;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-muted);
+    border-bottom: 1px solid var(--border);
+  }
+  .data-table td {
+    padding: 9px 16px;
+    border-bottom: 1px solid var(--border);
+    color: var(--text);
+  }
+  .data-table tbody tr:hover { background: var(--surface-2); }
+  .data-table .row-num {
+    color: var(--text-dim);
+    font-size: 11px;
+    width: 40px;
+    text-align: center;
+  }
+  .data-table .num { text-align: right; font-variant-numeric: tabular-nums; }
+
+  .summary-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 12px;
+    margin-top: 16px;
+  }
+  .summary-card {
+    background: var(--surface-2);
+    border-radius: var(--radius);
+    padding: 12px 16px;
+  }
+  .summary-card .label { font-size: 11px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; }
+  .summary-card .value { font-size: 16px; font-weight: 600; }
+
+  /* ── Date Range (Step 5) ── */
+  .date-range-full {
+    padding: 14px 16px;
+    background: var(--surface-2);
+    border-radius: var(--radius);
+    margin-bottom: 24px;
+    font-size: 13px;
+    color: var(--text-muted);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .date-range-full span { color: var(--text); font-weight: 500; }
+  .date-range-inputs {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin-bottom: 24px;
+  }
+  .range-slider-wrap {
+    margin-bottom: 24px;
+    padding: 0 4px;
+  }
+  .range-track {
+    position: relative;
+    height: 6px;
+    background: var(--surface-3);
+    border-radius: 3px;
+    margin: 16px 0;
+  }
+  .range-fill {
+    position: absolute;
+    height: 100%;
+    background: var(--primary);
+    border-radius: 3px;
+    left: 33%;
+    right: 33%;
+  }
+  .range-thumb {
+    position: absolute;
+    width: 18px; height: 18px;
+    background: var(--primary);
+    border: 3px solid var(--surface);
+    border-radius: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    cursor: grab;
+    box-shadow: 0 0 8px var(--primary-glow);
+  }
+  .range-thumb.left { left: 33%; }
+  .range-thumb.right { left: 67%; }
+  .range-labels {
+    display: flex;
+    justify-content: space-between;
+    font-size: 11px;
+    color: var(--text-dim);
+    margin-top: 8px;
+  }
+  .quick-btns {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
+  }
+  .quick-btn {
+    padding: 6px 14px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-family: inherit;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: all .15s;
+  }
+  .quick-btn:hover { border-color: var(--primary); color: var(--text); }
+  .quick-btn.active { background: var(--primary-glow); border-color: var(--primary); color: var(--primary); }
+  .date-summary {
+    padding: 14px 16px;
+    background: var(--surface-2);
+    border-radius: var(--radius);
+    font-size: 13px;
+    display: flex;
+    gap: 32px;
+    color: var(--text-muted);
+  }
+  .date-summary span { color: var(--text); font-weight: 500; }
+
+  /* ── Entity Selection (Step 6) ── */
+  .entity-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+  }
+  .entity-counter {
+    font-size: 13px;
+    color: var(--text-muted);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .entity-counter .count {
+    background: var(--primary-glow);
+    color: var(--primary);
+    padding: 2px 10px;
+    border-radius: 12px;
+    font-weight: 600;
+    font-size: 12px;
+  }
+  .entity-actions {
+    display: flex;
+    gap: 8px;
+  }
+  .entity-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    max-height: 290px;
+    overflow-y: auto;
+    margin-bottom: 16px;
+    padding-right: 4px;
+  }
+  .entity-list::-webkit-scrollbar { width: 4px; }
+  .entity-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+  .entity-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 16px;
+    border-radius: var(--radius);
+    border: 1px solid var(--border);
+    background: var(--surface-2);
+    cursor: pointer;
+    transition: all .15s;
+  }
+  .entity-item:hover {
+    border-color: var(--border-hover);
+    background: var(--surface-3);
+  }
+  .entity-item.selected {
+    border-color: var(--primary);
+    background: var(--primary-glow);
+  }
+  .entity-item.disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+  .entity-check {
+    width: 20px; height: 20px;
+    border-radius: 4px;
+    border: 2px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    transition: all .15s;
+    font-size: 12px;
+    color: transparent;
+  }
+  .entity-item.selected .entity-check {
+    border-color: var(--primary);
+    background: var(--primary);
+    color: #fff;
+  }
+  .entity-info { flex: 1; }
+  .entity-title { font-size: 14px; font-weight: 500; }
+  .entity-detail { font-size: 12px; color: var(--text-dim); margin-top: 2px; }
+  .entity-avg { font-size: 12px; color: var(--text-muted); font-weight: 500; text-align: right; }
+
+  .import-summary {
+    padding: 16px;
+    background: var(--surface-2);
+    border-radius: var(--radius);
+    border: 1px solid var(--border);
+    margin-bottom: 8px;
+  }
+  .import-summary h4 {
+    font-size: 13px;
+    font-weight: 600;
+    margin-bottom: 10px;
+    color: var(--text-muted);
+  }
+  .import-summary-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    font-size: 13px;
+  }
+  .import-summary-grid .label { color: var(--text-dim); }
+  .import-summary-grid .val { color: var(--text); font-weight: 500; text-align: right; }
+
+  /* ── Import Progress (Step 7) ── */
+  .import-center {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 40px 0;
+    flex: 1;
+  }
+  .progress-ring {
+    width: 100px; height: 100px;
+    margin-bottom: 24px;
+    position: relative;
+  }
+  .progress-ring svg {
+    transform: rotate(-90deg);
+    width: 100px; height: 100px;
+  }
+  .progress-ring circle {
+    fill: none;
+    stroke-width: 6;
+    cx: 50; cy: 50; r: 44;
+  }
+  .progress-ring .bg { stroke: var(--surface-3); }
+  .progress-ring .fg {
+    stroke: var(--primary);
+    stroke-linecap: round;
+    stroke-dasharray: 276.46;
+    stroke-dashoffset: 276.46;
+    transition: stroke-dashoffset 0.4s ease;
+  }
+  .progress-ring .pct {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 20px;
+    font-weight: 700;
+  }
+  .progress-text {
+    font-size: 14px;
+    color: var(--text-muted);
+    margin-bottom: 8px;
+  }
+  .progress-sub {
+    font-size: 13px;
+    color: var(--text-dim);
+  }
+
+  /* ── Success (Step 8) ── */
+  .success-icon {
+    width: 72px; height: 72px;
+    border-radius: 50%;
+    background: var(--success-bg);
+    border: 2px solid var(--success-border);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 32px;
+    margin-bottom: 20px;
+  }
+  .success-title {
+    font-size: 20px;
+    font-weight: 700;
+    margin-bottom: 8px;
+  }
+  .success-sub {
+    font-size: 14px;
+    color: var(--text-muted);
+    margin-bottom: 28px;
+  }
+  .success-details {
+    background: var(--surface-2);
+    border-radius: var(--radius);
+    padding: 20px 24px;
+    width: 100%;
+    max-width: 400px;
+    margin-bottom: 28px;
+    text-align: left;
+  }
+  .success-details .row {
+    display: flex;
+    justify-content: space-between;
+    padding: 6px 0;
+    font-size: 13px;
+  }
+  .success-details .row .label { color: var(--text-dim); }
+  .success-details .row .val { color: var(--text); font-weight: 500; }
+  .success-actions {
+    display: flex;
+    gap: 12px;
+  }
+
+  /* ── Animations ── */
+  .step-content {
+    animation: fadeIn .3s ease;
+  }
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  /* ── Hide/Show ── */
+  .hidden { display: none !important; }
+
+  /* ── Responsive ── */
+  @media (max-width: 640px) {
+    .wizard-card { padding: 20px; }
+    .form-row { grid-template-columns: 1fr; }
+    .mapping-row { grid-template-columns: 1fr; }
+    .mapping-arrow { display: none; }
+    .stepper { overflow-x: auto; padding-bottom: 8px; }
+    .step-label { display: none; }
+    .date-range-inputs { grid-template-columns: 1fr; }
+    .import-summary-grid { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<!-- Top Nav -->
+<nav class="topnav">
+  <div class="topnav-logo">LUCENT</div>
+  <div class="topnav-right">
+    <span>Acme Corp</span>
+    <div class="topnav-avatar">JD</div>
+  </div>
+</nav>
+
+<div class="page">
+  <div class="wizard-container">
+    <div class="wizard-title">SQL Server Data Import</div>
+    <div class="wizard-subtitle">Connect to your SQL Server and import time series data step by step.</div>
+
+    <!-- Stepper -->
+    <div class="stepper" id="stepper">
+      <div class="step-item active" data-step="1" onclick="goToStep(1)">
+        <div class="step-circle">1</div>
+        <span class="step-label">Connect</span>
+      </div>
+      <div class="step-line" id="line-1-2"></div>
+      <div class="step-item disabled" data-step="2" onclick="goToStep(2)">
+        <div class="step-circle">2</div>
+        <span class="step-label">Table</span>
+      </div>
+      <div class="step-line" id="line-2-3"></div>
+      <div class="step-item disabled" data-step="3" onclick="goToStep(3)">
+        <div class="step-circle">3</div>
+        <span class="step-label">Columns</span>
+      </div>
+      <div class="step-line" id="line-3-4"></div>
+      <div class="step-item disabled" data-step="4" onclick="goToStep(4)">
+        <div class="step-circle">4</div>
+        <span class="step-label">Preview</span>
+      </div>
+      <div class="step-line" id="line-4-5"></div>
+      <div class="step-item disabled" data-step="5" onclick="goToStep(5)">
+        <div class="step-circle">5</div>
+        <span class="step-label">Dates</span>
+      </div>
+      <div class="step-line" id="line-5-6"></div>
+      <div class="step-item disabled" data-step="6" onclick="goToStep(6)">
+        <div class="step-circle">6</div>
+        <span class="step-label">Entities</span>
+      </div>
+    </div>
+
+    <!-- ═══════════════════ STEP 1: Connect ═══════════════════ -->
+    <div class="wizard-card step-content" id="step-1">
+      <div class="card-header">Step 1 of 6 — Connect to SQL Server</div>
+      <div class="card-desc">Enter your SQL Server credentials and test the connection.</div>
+      <div class="card-body">
+        <div class="form-row">
+          <div class="form-group">
+            <label>Server / Host <span class="req">*</span></label>
+            <input class="form-input" type="text" value="sales-db.database.windows.net" />
+          </div>
+          <div class="form-group">
+            <label>Port</label>
+            <input class="form-input" type="text" value="1433" />
+          </div>
+        </div>
+        <div class="form-row full">
+          <div class="form-group">
+            <label>Database <span class="req">*</span></label>
+            <input class="form-input" type="text" value="SalesDB" />
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Username <span class="req">*</span></label>
+            <input class="form-input" type="text" value="sa_reader" />
+          </div>
+          <div class="form-group">
+            <label>Password <span class="req">*</span></label>
+            <input class="form-input" type="password" value="secretpassword" />
+          </div>
+        </div>
+        <div class="form-row full">
+          <div class="form-group">
+            <label>ODBC Driver</label>
+            <select class="form-select">
+              <option>ODBC Driver 17 for SQL Server</option>
+              <option>ODBC Driver 18 for SQL Server</option>
+            </select>
+          </div>
+        </div>
+        <div class="checkbox-row">
+          <input type="checkbox" checked id="encrypt" /> <label for="encrypt">Encrypt connection</label>
+        </div>
+        <div class="checkbox-row">
+          <input type="checkbox" checked id="trustcert" /> <label for="trustcert">Trust server certificate</label>
+        </div>
+        <div class="test-row">
+          <button class="btn btn-outline" id="testBtn" onclick="testConnection()">Test Connection</button>
+          <div class="test-result" id="testResult"></div>
+        </div>
+        <div class="alert alert-info" style="margin-top:16px">
+          <span class="alert-icon">ℹ</span>
+          <span>Ensure your SQL Server allows remote connections and the firewall permits access on the configured port.</span>
+        </div>
+      </div>
+      <div class="wizard-footer">
+        <div></div>
+        <button class="btn btn-primary" id="nextBtn1" disabled onclick="nextStep(1)">Next &rarr;</button>
+      </div>
+    </div>
+
+    <!-- ═══════════════════ STEP 2: Select Table ═══════════════════ -->
+    <div class="wizard-card step-content hidden" id="step-2">
+      <div class="card-header">Step 2 of 6 — Select a Table</div>
+      <div class="card-desc">Choose the table containing your time series data.</div>
+      <div class="card-body">
+        <div class="search-box">
+          <span class="search-icon">&#128269;</span>
+          <input class="form-input" style="padding-left:36px" type="text" placeholder="Search tables..." oninput="filterTables(this.value)" />
+        </div>
+        <div class="table-list-header">
+          <span>Database: <strong style="color:var(--text)">SalesDB</strong></span>
+          <span id="tableCount">8 tables found</span>
+        </div>
+        <div class="table-list" id="tableList">
+          <div class="table-item" onclick="selectTable(this, 'dbo.Customers')">
+            <div class="table-item-left">
+              <div class="table-radio"><div class="table-radio-inner"></div></div>
+              <div>
+                <div class="table-name">dbo.Customers</div>
+                <div class="table-cols">6 columns</div>
+              </div>
+            </div>
+            <div class="table-meta">1,240 rows</div>
+          </div>
+          <div class="table-item" onclick="selectTable(this, 'dbo.DailySales')">
+            <div class="table-item-left">
+              <div class="table-radio"><div class="table-radio-inner"></div></div>
+              <div>
+                <div class="table-name">dbo.DailySales</div>
+                <div class="table-cols">8 columns</div>
+              </div>
+            </div>
+            <div class="table-meta">145,320 rows</div>
+          </div>
+          <div class="table-item" onclick="selectTable(this, 'dbo.MonthlyAggregates')">
+            <div class="table-item-left">
+              <div class="table-radio"><div class="table-radio-inner"></div></div>
+              <div>
+                <div class="table-name">dbo.MonthlyAggregates</div>
+                <div class="table-cols">7 columns</div>
+              </div>
+            </div>
+            <div class="table-meta">3,600 rows</div>
+          </div>
+          <div class="table-item" onclick="selectTable(this, 'dbo.Products')">
+            <div class="table-item-left">
+              <div class="table-radio"><div class="table-radio-inner"></div></div>
+              <div>
+                <div class="table-name">dbo.Products</div>
+                <div class="table-cols">5 columns</div>
+              </div>
+            </div>
+            <div class="table-meta">580 rows</div>
+          </div>
+          <div class="table-item" onclick="selectTable(this, 'dbo.Regions')">
+            <div class="table-item-left">
+              <div class="table-radio"><div class="table-radio-inner"></div></div>
+              <div>
+                <div class="table-name">dbo.Regions</div>
+                <div class="table-cols">3 columns</div>
+              </div>
+            </div>
+            <div class="table-meta">42 rows</div>
+          </div>
+          <div class="table-item" onclick="selectTable(this, 'dbo.StoreLookup')">
+            <div class="table-item-left">
+              <div class="table-radio"><div class="table-radio-inner"></div></div>
+              <div>
+                <div class="table-name">dbo.StoreLookup</div>
+                <div class="table-cols">4 columns</div>
+              </div>
+            </div>
+            <div class="table-meta">120 rows</div>
+          </div>
+          <div class="table-item" onclick="selectTable(this, 'staging.RawImport')">
+            <div class="table-item-left">
+              <div class="table-radio"><div class="table-radio-inner"></div></div>
+              <div>
+                <div class="table-name">staging.RawImport</div>
+                <div class="table-cols">10 columns</div>
+              </div>
+            </div>
+            <div class="table-meta">89,100 rows</div>
+          </div>
+          <div class="table-item" onclick="selectTable(this, 'staging.TempLoad')">
+            <div class="table-item-left">
+              <div class="table-radio"><div class="table-radio-inner"></div></div>
+              <div>
+                <div class="table-name">staging.TempLoad</div>
+                <div class="table-cols">6 columns</div>
+              </div>
+            </div>
+            <div class="table-meta">2,500 rows</div>
+          </div>
+        </div>
+      </div>
+      <div class="wizard-footer">
+        <button class="btn btn-outline" onclick="prevStep(2)">&larr; Back</button>
+        <button class="btn btn-primary" id="nextBtn2" disabled onclick="nextStep(2)">Next &rarr;</button>
+      </div>
+    </div>
+
+    <!-- ═══════════════════ STEP 3: Map Columns ═══════════════════ -->
+    <div class="wizard-card step-content hidden" id="step-3">
+      <div class="card-header">Step 3 of 6 — Map Columns</div>
+      <div class="card-desc">Table: <strong id="selectedTableName" style="color:var(--text)">dbo.DailySales</strong> — Map each required field to a column.</div>
+      <div class="card-body">
+        <div class="mapping-grid">
+          <div class="mapping-row">
+            <div class="mapping-field">
+              <div class="icon">&#128197;</div>
+              <div>
+                <div>Date <span style="color:var(--primary)">*</span></div>
+                <div style="font-size:11px;color:var(--text-dim);font-weight:400">datetime</div>
+              </div>
+            </div>
+            <div class="mapping-arrow">&rarr;</div>
+            <div class="mapping-select-wrap">
+              <select class="form-select" onchange="checkMappings()">
+                <option value="">Select column...</option>
+                <option value="sale_date" selected>sale_date</option>
+                <option value="store_id">store_id</option>
+                <option value="store_name">store_name</option>
+                <option value="quantity_sold">quantity_sold</option>
+                <option value="region">region</option>
+                <option value="category">category</option>
+                <option value="revenue">revenue</option>
+                <option value="discount_pct">discount_pct</option>
+              </select>
+              <div class="mapping-type"><span class="type-badge ok">datetime</span> Compatible</div>
+            </div>
+          </div>
+
+          <div class="mapping-row">
+            <div class="mapping-field">
+              <div class="icon">&#128273;</div>
+              <div>
+                <div>Entity ID <span style="color:var(--primary)">*</span></div>
+                <div style="font-size:11px;color:var(--text-dim);font-weight:400">string / int</div>
+              </div>
+            </div>
+            <div class="mapping-arrow">&rarr;</div>
+            <div class="mapping-select-wrap">
+              <select class="form-select" onchange="checkMappings()">
+                <option value="">Select column...</option>
+                <option value="sale_date">sale_date</option>
+                <option value="store_id" selected>store_id</option>
+                <option value="store_name">store_name</option>
+                <option value="quantity_sold">quantity_sold</option>
+                <option value="region">region</option>
+                <option value="category">category</option>
+                <option value="revenue">revenue</option>
+                <option value="discount_pct">discount_pct</option>
+              </select>
+              <div class="mapping-type"><span class="type-badge ok">varchar(20)</span> Compatible</div>
+            </div>
+          </div>
+
+          <div class="mapping-row">
+            <div class="mapping-field">
+              <div class="icon">&#127991;</div>
+              <div>
+                <div>Entity Name <span style="color:var(--primary)">*</span></div>
+                <div style="font-size:11px;color:var(--text-dim);font-weight:400">string</div>
+              </div>
+            </div>
+            <div class="mapping-arrow">&rarr;</div>
+            <div class="mapping-select-wrap">
+              <select class="form-select" onchange="checkMappings()">
+                <option value="">Select column...</option>
+                <option value="sale_date">sale_date</option>
+                <option value="store_id">store_id</option>
+                <option value="store_name" selected>store_name</option>
+                <option value="quantity_sold">quantity_sold</option>
+                <option value="region">region</option>
+                <option value="category">category</option>
+                <option value="revenue">revenue</option>
+                <option value="discount_pct">discount_pct</option>
+              </select>
+              <div class="mapping-type"><span class="type-badge ok">nvarchar(100)</span> Compatible</div>
+            </div>
+          </div>
+
+          <div class="mapping-row">
+            <div class="mapping-field">
+              <div class="icon">&#128202;</div>
+              <div>
+                <div>Volume <span style="color:var(--primary)">*</span></div>
+                <div style="font-size:11px;color:var(--text-dim);font-weight:400">numeric</div>
+              </div>
+            </div>
+            <div class="mapping-arrow">&rarr;</div>
+            <div class="mapping-select-wrap">
+              <select class="form-select" onchange="checkMappings()">
+                <option value="">Select column...</option>
+                <option value="sale_date">sale_date</option>
+                <option value="store_id">store_id</option>
+                <option value="store_name">store_name</option>
+                <option value="quantity_sold" selected>quantity_sold</option>
+                <option value="region">region</option>
+                <option value="category">category</option>
+                <option value="revenue">revenue</option>
+                <option value="discount_pct">discount_pct</option>
+              </select>
+              <div class="mapping-type"><span class="type-badge ok">int</span> Compatible</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="unmapped-info">
+          <strong>Unmapped columns:</strong> region (varchar) &middot; category (varchar) &middot; revenue (decimal) &middot; discount_pct (float)
+        </div>
+
+        <div class="alert alert-info">
+          <span class="alert-icon">ℹ</span>
+          <span>All 4 fields must be mapped. Each column can only be used once. Type compatibility is validated automatically.</span>
+        </div>
+      </div>
+      <div class="wizard-footer">
+        <button class="btn btn-outline" onclick="prevStep(3)">&larr; Back</button>
+        <button class="btn btn-primary" id="nextBtn3" onclick="nextStep(3)">Next &rarr;</button>
+      </div>
+    </div>
+
+    <!-- ═══════════════════ STEP 4: Preview Data ═══════════════════ -->
+    <div class="wizard-card step-content hidden" id="step-4">
+      <div class="card-header">Step 4 of 6 — Preview Data</div>
+      <div class="card-desc">First 100 rows with your mapped columns. Verify the data looks correct.</div>
+      <div class="card-body">
+        <div class="preview-meta">
+          <div class="preview-meta-item">Table: <span>dbo.DailySales</span></div>
+          <div class="preview-meta-item">Showing: <span>100 rows</span></div>
+        </div>
+        <div class="data-table-wrap">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th style="width:40px">#</th>
+                <th>Date</th>
+                <th>Entity_ID</th>
+                <th>Entity_Name</th>
+                <th style="text-align:right">Volume</th>
+              </tr>
+            </thead>
+            <tbody id="previewBody"></tbody>
+          </table>
+        </div>
+
+        <div class="summary-grid">
+          <div class="summary-card">
+            <div class="label">Rows</div>
+            <div class="value">100</div>
+          </div>
+          <div class="summary-card">
+            <div class="label">Unique Dates</div>
+            <div class="value">20</div>
+          </div>
+          <div class="summary-card">
+            <div class="label">Unique Entities</div>
+            <div class="value">5</div>
+          </div>
+          <div class="summary-card">
+            <div class="label">Volume Range</div>
+            <div class="value">445 — 2,105</div>
+          </div>
+        </div>
+
+        <div class="alert alert-success" style="margin-top:16px">
+          <span class="alert-icon">&#10004;</span>
+          <span>Data looks good — 4 columns mapped, no null values detected in the first 100 rows.</span>
+        </div>
+      </div>
+      <div class="wizard-footer">
+        <button class="btn btn-outline" onclick="prevStep(4)">&larr; Back</button>
+        <button class="btn btn-primary" onclick="nextStep(4)">Next &rarr;</button>
+      </div>
+    </div>
+
+    <!-- ═══════════════════ STEP 5: Date Range ═══════════════════ -->
+    <div class="wizard-card step-content hidden" id="step-5">
+      <div class="card-header">Step 5 of 6 — Select Date Range</div>
+      <div class="card-desc">Choose the date range for your import.</div>
+      <div class="card-body">
+        <div class="date-range-full">
+          <span>&#128197;</span> Full data range: <span>2023-01-01</span> &rarr; <span>2025-12-31</span> &nbsp;(1,095 days)
+        </div>
+
+        <div class="date-range-inputs">
+          <div class="form-group">
+            <label>From Date <span class="req">*</span></label>
+            <input class="form-input" type="date" value="2024-01-01" id="dateFrom" onchange="updateDateSummary()" />
+          </div>
+          <div class="form-group">
+            <label>To Date <span class="req">*</span></label>
+            <input class="form-input" type="date" value="2024-12-31" id="dateTo" onchange="updateDateSummary()" />
+          </div>
+        </div>
+
+        <div class="range-slider-wrap">
+          <div class="range-track">
+            <div class="range-fill" id="rangeFill"></div>
+            <div class="range-thumb left" id="thumbLeft"></div>
+            <div class="range-thumb right" id="thumbRight"></div>
+          </div>
+          <div class="range-labels">
+            <span>2023-01-01</span>
+            <span>2024-01-01</span>
+            <span>2025-01-01</span>
+            <span>2025-12-31</span>
+          </div>
+        </div>
+
+        <div class="quick-btns">
+          <button class="quick-btn" onclick="setQuickRange(3, this)">Last 3 months</button>
+          <button class="quick-btn" onclick="setQuickRange(6, this)">Last 6 months</button>
+          <button class="quick-btn active" onclick="setQuickRange(12, this)">Last 1 year</button>
+          <button class="quick-btn" onclick="setQuickRange(0, this)">All data</button>
+        </div>
+
+        <div class="date-summary" id="dateSummary">
+          <div>Selected: <span>2024-01-01 &rarr; 2024-12-31</span></div>
+          <div>Duration: <span>366 days</span></div>
+          <div>Est. rows: <span>~91,500</span></div>
+        </div>
+      </div>
+      <div class="wizard-footer">
+        <button class="btn btn-outline" onclick="prevStep(5)">&larr; Back</button>
+        <button class="btn btn-primary" onclick="nextStep(5)">Next &rarr;</button>
+      </div>
+    </div>
+
+    <!-- ═══════════════════ STEP 6: Select Entities ═══════════════════ -->
+    <div class="wizard-card step-content hidden" id="step-6">
+      <div class="card-header">Step 6 of 6 — Select Entities</div>
+      <div class="card-desc">12 entities found in the selected date range. Pick up to 5 for import.</div>
+      <div class="card-body">
+        <div class="search-box">
+          <span class="search-icon">&#128269;</span>
+          <input class="form-input" style="padding-left:36px" type="text" placeholder="Search entities..." oninput="filterEntities(this.value)" />
+        </div>
+
+        <div class="entity-header">
+          <div class="entity-actions">
+            <button class="btn btn-ghost btn-sm" onclick="selectFirstFive()">Select first 5</button>
+            <button class="btn btn-ghost btn-sm" onclick="clearEntities()">Clear all</button>
+          </div>
+          <div class="entity-counter">Selected: <span class="count" id="entityCount">0 / 5</span></div>
+        </div>
+
+        <div class="entity-list" id="entityList">
+          <!-- populated by JS -->
+        </div>
+
+        <div class="import-summary" id="importSummary">
+          <h4>Import Summary</h4>
+          <div class="import-summary-grid">
+            <div class="label">Date range</div>
+            <div class="val">2024-01-01 &rarr; 2024-12-31</div>
+            <div class="label">Duration</div>
+            <div class="val">366 days</div>
+            <div class="label">Entities</div>
+            <div class="val" id="summaryEntities">—</div>
+            <div class="label">Est. rows</div>
+            <div class="val" id="summaryRows">—</div>
+          </div>
+        </div>
+
+        <div class="alert alert-warning">
+          <span class="alert-icon">&#9888;</span>
+          <span>Maximum 5 entities per import. Fewer entities = faster forecasting. You can always import more later.</span>
+        </div>
+      </div>
+      <div class="wizard-footer">
+        <button class="btn btn-outline" onclick="prevStep(6)">&larr; Back</button>
+        <button class="btn btn-success" id="importBtn" disabled onclick="startImport()">&#10003; Import Data</button>
+      </div>
+    </div>
+
+    <!-- ═══════════════════ STEP 7: Importing ═══════════════════ -->
+    <div class="wizard-card step-content hidden" id="step-7">
+      <div class="card-body">
+        <div class="import-center">
+          <div class="progress-ring">
+            <svg viewBox="0 0 100 100">
+              <circle class="bg" />
+              <circle class="fg" id="progressCircle" />
+            </svg>
+            <div class="pct" id="progressPct">0%</div>
+          </div>
+          <div class="progress-text">Importing data from <strong>dbo.DailySales</strong>...</div>
+          <div class="progress-sub" id="progressRows">0 of 1,072 rows</div>
+          <button class="btn btn-ghost" style="margin-top:20px" onclick="cancelImport()">Cancel</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══════════════════ STEP 8: Success ═══════════════════ -->
+    <div class="wizard-card step-content hidden" id="step-8">
+      <div class="card-body">
+        <div class="import-center">
+          <div class="success-icon">&#10004;</div>
+          <div class="success-title">Import Complete!</div>
+          <div class="success-sub">Your data has been successfully imported into LUCENT.</div>
+          <div class="success-details">
+            <div class="row"><span class="label">Source</span><span class="val">dbo.DailySales</span></div>
+            <div class="row"><span class="label">Server</span><span class="val">sales-db.database.windows.net</span></div>
+            <div class="row"><span class="label">Date range</span><span class="val">2024-01-01 &rarr; 2024-12-31</span></div>
+            <div class="row"><span class="label">Entities</span><span class="val" id="successEntities">—</span></div>
+            <div class="row"><span class="label">Rows imported</span><span class="val" id="successRows">—</span></div>
+            <div class="row"><span class="label">Duration</span><span class="val">2.3 seconds</span></div>
+          </div>
+          <div class="success-actions">
+            <button class="btn btn-outline" onclick="resetWizard()">&#8592; Import More Data</button>
+            <button class="btn btn-primary">Go to Data Module &rarr;</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  // ── State ──
+  let currentStep = 1;
+  let maxReached = 1;
+  let selectedTable = null;
+  let connectionTested = false;
+  const selectedEntities = new Set();
+
+  const entities = [
+    { id: 'S001', name: 'Store Alpha',   records: 366, avg: 1510 },
+    { id: 'S002', name: 'Store Beta',    records: 366, avg: 890 },
+    { id: 'S003', name: 'Store Gamma',   records: 340, avg: 2050 },
+    { id: 'S004', name: 'Store Delta',   records: 366, avg: 470 },
+    { id: 'S005', name: 'Store Epsilon', records: 280, avg: 1680 },
+    { id: 'S006', name: 'Store Zeta',    records: 366, avg: 1220 },
+    { id: 'S007', name: 'Store Eta',     records: 350, avg: 930 },
+    { id: 'S008', name: 'Store Theta',   records: 366, avg: 760 },
+    { id: 'S009', name: 'Store Iota',    records: 310, avg: 1340 },
+    { id: 'S010', name: 'Store Kappa',   records: 366, avg: 550 },
+    { id: 'S011', name: 'Store Lambda',  records: 345, avg: 1890 },
+    { id: 'S012', name: 'Store Mu',      records: 366, avg: 420 },
+  ];
+
+  // ── Preview Data ──
+  const previewData = [];
+  const storeNames = ['Store Alpha','Store Beta','Store Gamma','Store Delta','Store Epsilon'];
+  const storeIds = ['S001','S002','S003','S004','S005'];
+  let row = 0;
+  for (let d = 1; d <= 20; d++) {
+    for (let s = 0; s < 5; s++) {
+      if (row >= 100) break;
+      const day = String(d).padStart(2,'0');
+      previewData.push({
+        date: `2024-01-${day}`,
+        id: storeIds[s],
+        name: storeNames[s],
+        volume: Math.floor(400 + Math.random() * 1800)
+      });
+      row++;
+    }
+  }
+
+  // ── Init ──
+  function init() {
+    renderPreview();
+    renderEntities();
+  }
+
+  function renderPreview() {
+    const body = document.getElementById('previewBody');
+    body.innerHTML = previewData.map((r, i) => `
+      <tr>
+        <td class="row-num">${i + 1}</td>
+        <td>${r.date}</td>
+        <td>${r.id}</td>
+        <td>${r.name}</td>
+        <td class="num">${r.volume.toLocaleString()}</td>
+      </tr>
+    `).join('');
+  }
+
+  function renderEntities(filter = '') {
+    const list = document.getElementById('entityList');
+    const f = filter.toLowerCase();
+    list.innerHTML = entities.filter(e =>
+      e.id.toLowerCase().includes(f) || e.name.toLowerCase().includes(f)
+    ).map(e => {
+      const sel = selectedEntities.has(e.id);
+      const disabled = !sel && selectedEntities.size >= 5;
+      return `
+        <div class="entity-item ${sel ? 'selected' : ''} ${disabled ? 'disabled' : ''}" onclick="toggleEntity('${e.id}')">
+          <div class="entity-check">${sel ? '&#10003;' : ''}</div>
+          <div class="entity-info">
+            <div class="entity-title">${e.id} — ${e.name}</div>
+            <div class="entity-detail">${e.records} records in range</div>
+          </div>
+          <div class="entity-avg">Avg: ${e.avg.toLocaleString()}</div>
+        </div>
+      `;
+    }).join('');
+    updateEntitySummary();
+  }
+
+  // ── Stepper ──
+  function updateStepper() {
+    const items = document.querySelectorAll('.step-item');
+    const lines = document.querySelectorAll('.step-line');
+    items.forEach((item, i) => {
+      const s = i + 1;
+      item.classList.remove('active', 'completed', 'disabled');
+      if (s < currentStep) item.classList.add('completed');
+      else if (s === currentStep) item.classList.add('active');
+      else if (s <= maxReached) { /* clickable */ }
+      else item.classList.add('disabled');
+      const circle = item.querySelector('.step-circle');
+      circle.innerHTML = s < currentStep ? '&#10003;' : s;
+    });
+    lines.forEach((line, i) => {
+      line.classList.toggle('completed', i + 1 < currentStep);
+    });
+  }
+
+  function showStep(n) {
+    for (let i = 1; i <= 8; i++) {
+      const el = document.getElementById('step-' + i);
+      if (el) el.classList.toggle('hidden', i !== n);
+    }
+    if (n <= 6) {
+      document.getElementById('stepper').classList.remove('hidden');
+    } else {
+      document.getElementById('stepper').classList.add('hidden');
+    }
+    currentStep = n;
+    if (n > maxReached) maxReached = n;
+    updateStepper();
+  }
+
+  function goToStep(n) {
+    if (n <= maxReached && n >= 1 && n <= 6) showStep(n);
+  }
+
+  function nextStep(from) {
+    showStep(from + 1);
+  }
+
+  function prevStep(from) {
+    showStep(from - 1);
+  }
+
+  // ── Step 1: Test Connection ──
+  function testConnection() {
+    const btn = document.getElementById('testBtn');
+    const result = document.getElementById('testResult');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span> Testing...';
+    result.className = 'test-result';
+    result.innerHTML = '';
+    setTimeout(() => {
+      btn.disabled = false;
+      btn.innerHTML = 'Test Connection';
+      result.className = 'test-result success';
+      result.innerHTML = '&#10004; Connection successful — SalesDB on sales-db';
+      connectionTested = true;
+      document.getElementById('nextBtn1').disabled = false;
+    }, 1800);
+  }
+
+  // ── Step 2: Table Selection ──
+  function selectTable(el, name) {
+    document.querySelectorAll('.table-item').forEach(e => e.classList.remove('selected'));
+    el.classList.add('selected');
+    selectedTable = name;
+    document.getElementById('nextBtn2').disabled = false;
+    document.getElementById('selectedTableName').textContent = name;
+  }
+
+  function filterTables(val) {
+    const items = document.querySelectorAll('.table-item');
+    const v = val.toLowerCase();
+    let count = 0;
+    items.forEach(item => {
+      const name = item.querySelector('.table-name').textContent.toLowerCase();
+      const show = name.includes(v);
+      item.style.display = show ? '' : 'none';
+      if (show) count++;
+    });
+    document.getElementById('tableCount').textContent = count + ' tables found';
+  }
+
+  // ── Step 3: Mapping Check ──
+  function checkMappings() {
+    const selects = document.querySelectorAll('#step-3 .form-select');
+    let allMapped = true;
+    const vals = [];
+    selects.forEach(s => {
+      if (!s.value) allMapped = false;
+      else vals.push(s.value);
+    });
+    const unique = new Set(vals).size === vals.length;
+    document.getElementById('nextBtn3').disabled = !(allMapped && unique);
+  }
+
+  // ── Step 5: Date Range ──
+  function setQuickRange(months, btn) {
+    document.querySelectorAll('.quick-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    const to = new Date('2025-12-31');
+    let from;
+    if (months === 0) {
+      from = new Date('2023-01-01');
+    } else {
+      from = new Date(to);
+      from.setMonth(from.getMonth() - months);
+    }
+    document.getElementById('dateFrom').value = from.toISOString().split('T')[0];
+    document.getElementById('dateTo').value = to.toISOString().split('T')[0];
+    updateDateSummary();
+  }
+
+  function updateDateSummary() {
+    const from = new Date(document.getElementById('dateFrom').value);
+    const to = new Date(document.getElementById('dateTo').value);
+    const days = Math.round((to - from) / (1000 * 60 * 60 * 24));
+    const est = days * 5;
+    document.getElementById('dateSummary').innerHTML = `
+      <div>Selected: <span>${from.toISOString().split('T')[0]} &rarr; ${to.toISOString().split('T')[0]}</span></div>
+      <div>Duration: <span>${days} days</span></div>
+      <div>Est. rows: <span>~${est.toLocaleString()}</span></div>
+    `;
+  }
+
+  // ── Step 6: Entities ──
+  function toggleEntity(id) {
+    if (selectedEntities.has(id)) {
+      selectedEntities.delete(id);
+    } else if (selectedEntities.size < 5) {
+      selectedEntities.add(id);
+    }
+    renderEntities();
+  }
+
+  function selectFirstFive() {
+    selectedEntities.clear();
+    entities.slice(0, 5).forEach(e => selectedEntities.add(e.id));
+    renderEntities();
+  }
+
+  function clearEntities() {
+    selectedEntities.clear();
+    renderEntities();
+  }
+
+  function filterEntities(val) {
+    renderEntities(val);
+  }
+
+  function updateEntitySummary() {
+    const count = selectedEntities.size;
+    document.getElementById('entityCount').textContent = `${count} / 5`;
+    document.getElementById('importBtn').disabled = count === 0;
+
+    if (count > 0) {
+      const names = entities.filter(e => selectedEntities.has(e.id)).map(e => e.name);
+      const totalRows = entities.filter(e => selectedEntities.has(e.id)).reduce((s, e) => s + e.records, 0);
+      document.getElementById('summaryEntities').textContent = names.join(', ');
+      document.getElementById('summaryRows').textContent = '~' + totalRows.toLocaleString();
+    } else {
+      document.getElementById('summaryEntities').textContent = '—';
+      document.getElementById('summaryRows').textContent = '—';
+    }
+  }
+
+  // ── Step 7: Import Progress ──
+  let importTimer = null;
+
+  function startImport() {
+    showStep(7);
+    let progress = 0;
+    const totalRows = entities.filter(e => selectedEntities.has(e.id)).reduce((s, e) => s + e.records, 0);
+    const circle = document.getElementById('progressCircle');
+    const pct = document.getElementById('progressPct');
+    const rowsEl = document.getElementById('progressRows');
+    const circumference = 2 * Math.PI * 44;
+
+    importTimer = setInterval(() => {
+      progress += Math.random() * 8 + 2;
+      if (progress >= 100) {
+        progress = 100;
+        clearInterval(importTimer);
+        setTimeout(() => showSuccess(totalRows), 500);
+      }
+      const offset = circumference - (progress / 100) * circumference;
+      circle.style.strokeDashoffset = offset;
+      pct.textContent = Math.round(progress) + '%';
+      const doneRows = Math.min(Math.round(totalRows * progress / 100), totalRows);
+      rowsEl.textContent = `${doneRows.toLocaleString()} of ${totalRows.toLocaleString()} rows`;
+    }, 200);
+  }
+
+  function cancelImport() {
+    clearInterval(importTimer);
+    showStep(6);
+  }
+
+  function showSuccess(totalRows) {
+    const names = entities.filter(e => selectedEntities.has(e.id)).map(e => e.name);
+    document.getElementById('successEntities').textContent = names.join(', ');
+    document.getElementById('successRows').textContent = totalRows.toLocaleString();
+    showStep(8);
+  }
+
+  // ── Reset ──
+  function resetWizard() {
+    currentStep = 1;
+    maxReached = 1;
+    selectedTable = null;
+    connectionTested = false;
+    selectedEntities.clear();
+    document.getElementById('nextBtn1').disabled = true;
+    document.getElementById('nextBtn2').disabled = true;
+    document.getElementById('testResult').innerHTML = '';
+    document.querySelectorAll('.table-item').forEach(e => e.classList.remove('selected'));
+    showStep(1);
+    renderEntities();
+  }
+
+  init();
+</script>
+</body>
+</html>

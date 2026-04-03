@@ -1,7 +1,7 @@
 """
 Forecast History Model - Tracks Forecast Execution Metadata
 """
-from sqlalchemy import Column, String, Integer, JSON, DateTime, ForeignKey, Enum
+from sqlalchemy import Column, String, Integer, Float, JSON, DateTime, ForeignKey, Enum
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from datetime import datetime
@@ -34,6 +34,7 @@ class ForecastHistory(Base):
 
     # Forecast details
     dataset_id = Column(String(36))  # Redis key reference
+    snapshot_id = Column(String(36), ForeignKey("data_snapshots.id", ondelete="SET NULL"), nullable=True)
     entity_id = Column(String(255))
     method = Column(Enum(ForecastMethod), nullable=False)
 
@@ -45,9 +46,9 @@ class ForecastHistory(Base):
     error_message = Column(String(500))
 
     # Metrics
-    mae = Column(Integer)  # Mean Absolute Error
-    rmse = Column(Integer)  # Root Mean Square Error
-    mape = Column(Integer)  # Mean Absolute Percentage Error
+    mae = Column(Float)  # Mean Absolute Error
+    rmse = Column(Float)  # Root Mean Square Error
+    mape = Column(Float)  # Mean Absolute Percentage Error
 
     # Performance
     processing_time_ms = Column(Integer)
@@ -61,6 +62,8 @@ class ForecastHistory(Base):
     # Relationships
     tenant = relationship("Tenant", back_populates="forecast_histories")
     user = relationship("User", back_populates="forecast_histories")
+    snapshot = relationship("DataSnapshot", backref="forecast_runs")
+    predictions = relationship("ForecastPrediction", back_populates="forecast_run", cascade="all, delete-orphan")
 
     def __repr__(self):
         return f"<ForecastHistory(id={self.id}, method={self.method}, status={self.status})>"

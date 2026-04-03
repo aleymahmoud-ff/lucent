@@ -5,3 +5,6 @@ export { ConnectorList } from "./ConnectorList";
 export { ResourceBrowser } from "./ResourceBrowser";
 export { DataPreview } from "./DataPreview";
 export type { ConnectorCardData } from "./ConnectorCard";
+
+// Wizard
+export { ConnectorWizard } from "./wizard";

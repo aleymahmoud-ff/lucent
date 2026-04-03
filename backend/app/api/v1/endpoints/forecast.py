@@ -113,9 +113,45 @@ async def run_forecast(
         )
 
     # Run forecast inline (no Celery worker required)
-    service = ForecastService(current_user.tenant_id, current_user.id)
+    service = ForecastService(current_user.tenant_id, current_user.id, db=db)
+
+    # Create ForecastHistory record for permanent audit trail
+    forecast_history_id = None
     try:
-        result = await service.run_forecast(request)
+        from app.models.forecast_history import ForecastHistory as ForecastHistoryModel, ForecastMethod as FHMethod, ForecastStatus as FHStatus
+        history = ForecastHistoryModel(
+            tenant_id=current_user.tenant_id,
+            user_id=current_user.id,
+            dataset_id=request.dataset_id,
+            entity_id=request.entity_id,
+            method=FHMethod(request.method.value),
+            config=request.model_dump(mode='json'),
+            status=FHStatus.RUNNING,
+            started_at=datetime.utcnow(),
+        )
+        db.add(history)
+        await db.flush()
+        forecast_history_id = history.id
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).error(f"Failed to create ForecastHistory (non-blocking): {e}")
+
+    try:
+        result = await service.run_forecast(request, forecast_history_id=forecast_history_id)
+
+        # Update history with completion status
+        if forecast_history_id:
+            try:
+                history.status = FHStatus.COMPLETED if result.status.value == "completed" else FHStatus.FAILED
+                history.completed_at = datetime.utcnow()
+                if result.metrics:
+                    history.mae = result.metrics.mae
+                    history.rmse = result.metrics.rmse
+                    history.mape = result.metrics.mape
+                await db.commit()
+            except Exception:
+                pass
+
         return result
     except Exception as e:
         raise HTTPException(
@@ -160,7 +196,7 @@ async def run_batch_forecast(
         )
 
     # Start batch forecast in background (returns immediately)
-    service = ForecastService(current_user.tenant_id, current_user.id)
+    service = ForecastService(current_user.tenant_id, current_user.id, db=db)
     try:
         result = await service.start_batch_forecast(request)
         return result
